@@ -44,6 +44,21 @@ export function getChatHtml(): string {
       font-size: 0.875rem;
     }
     header a:hover { color: var(--primary); }
+    .new-chat-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 0.25rem 0.75rem;
+      border-radius: 4px;
+      font-size: 0.875rem;
+      cursor: pointer;
+      margin-left: auto;
+    }
+    .new-chat-btn:hover {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
     .main-container {
       flex: 1;
       display: flex;
@@ -181,6 +196,30 @@ export function getChatHtml(): string {
       padding: 0.25rem 0;
     }
     .sources a:hover { text-decoration: underline; }
+    /* Markdown in messages */
+    .message p { margin: 0 0 0.5rem 0; }
+    .message p:last-child { margin-bottom: 0; }
+    .message a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    .message a:hover { text-decoration: underline; }
+    .message code {
+      background: rgba(0,0,0,0.1);
+      padding: 0.125rem 0.375rem;
+      border-radius: 3px;
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 0.875em;
+    }
+    .message strong { font-weight: 600; }
+    .md-list-item {
+      padding-left: 0.5rem;
+      margin: 0.25rem 0;
+    }
+    .md-bullet {
+      color: var(--primary);
+      margin-right: 0.25rem;
+    }
     .input-container {
       padding: 1rem 1.5rem;
       border-top: 1px solid var(--border);
@@ -310,6 +349,7 @@ export function getChatHtml(): string {
     <a href="https://docs.expanso.io" target="_blank">Documentation</a>
     <a href="https://expanso.io" target="_blank">Expanso</a>
     <a href="/.well-known/mcp.json" target="_blank">MCP Config</a>
+    <button id="newChatBtn" class="new-chat-btn" title="Start a new conversation">New Chat</button>
   </header>
 
   <div class="main-container">
@@ -388,36 +428,142 @@ export function getChatHtml(): string {
     }
 
     function removeCodeBlocks(text) {
-      return text.replace(/\`\`\`(?:yaml|yml)?\\n[\\s\\S]*?\`\`\`/g, '[See pipeline in right panel]').trim();
+      return text.replace(/\`\`\`(?:yaml|yml)?\\n[\\s\\S]*?\`\`\`/g, '\\n\\n➡️ **See pipeline in right panel**\\n\\n').trim();
     }
 
-    // Follow-up suggestion mappings
+    // Parse markdown text and return a document fragment with safe DOM elements
+    function parseMarkdown(text) {
+      var fragment = document.createDocumentFragment();
+      var lines = text.split('\\n');
+      var currentParagraph = null;
+
+      function flushParagraph() {
+        if (currentParagraph && currentParagraph.childNodes.length > 0) {
+          fragment.appendChild(currentParagraph);
+          currentParagraph = null;
+        }
+      }
+
+      function parseInline(str, container) {
+        // Parse inline markdown: **bold**, [link](url), \`code\`
+        var remaining = str;
+        while (remaining.length > 0) {
+          // Check for bold **text**
+          var boldMatch = remaining.match(/^\\*\\*([^*]+)\\*\\*/);
+          if (boldMatch) {
+            var strong = document.createElement('strong');
+            strong.textContent = boldMatch[1];
+            container.appendChild(strong);
+            remaining = remaining.slice(boldMatch[0].length);
+            continue;
+          }
+          // Check for links [text](url)
+          var linkMatch = remaining.match(/^\\[([^\\]]+)\\]\\(([^)]+)\\)/);
+          if (linkMatch) {
+            var a = document.createElement('a');
+            a.href = linkMatch[2];
+            a.textContent = linkMatch[1];
+            a.target = '_blank';
+            a.rel = 'noopener';
+            container.appendChild(a);
+            remaining = remaining.slice(linkMatch[0].length);
+            continue;
+          }
+          // Check for inline code \`text\`
+          var codeMatch = remaining.match(/^\`([^\`]+)\`/);
+          if (codeMatch) {
+            var code = document.createElement('code');
+            code.textContent = codeMatch[1];
+            container.appendChild(code);
+            remaining = remaining.slice(codeMatch[0].length);
+            continue;
+          }
+          // No match - add next character as text
+          var idx1 = remaining.indexOf('*');
+          var idx2 = remaining.indexOf('[');
+          var idx3 = remaining.indexOf(String.fromCharCode(96));
+          var nextSpecial = Math.min(
+            idx1 === -1 ? remaining.length : idx1,
+            idx2 === -1 ? remaining.length : idx2,
+            idx3 === -1 ? remaining.length : idx3
+          );
+          if (nextSpecial === remaining.length) nextSpecial = -1;
+          if (nextSpecial === -1) {
+            container.appendChild(document.createTextNode(remaining));
+            break;
+          } else if (nextSpecial === 0) {
+            container.appendChild(document.createTextNode(remaining[0]));
+            remaining = remaining.slice(1);
+          } else {
+            container.appendChild(document.createTextNode(remaining.slice(0, nextSpecial)));
+            remaining = remaining.slice(nextSpecial);
+          }
+        }
+      }
+
+      lines.forEach(function(line) {
+        // Empty line - start new paragraph
+        if (line.trim() === '') {
+          flushParagraph();
+          return;
+        }
+
+        // List item
+        if (line.match(/^\\s*[-*]\\s+/)) {
+          flushParagraph();
+          var li = document.createElement('div');
+          li.className = 'md-list-item';
+          var bullet = document.createElement('span');
+          bullet.className = 'md-bullet';
+          bullet.textContent = '• ';
+          li.appendChild(bullet);
+          var content = line.replace(/^\\s*[-*]\\s+/, '').trim();
+          parseInline(content, li);
+          fragment.appendChild(li);
+          return;
+        }
+
+        // Regular text - add to current paragraph
+        if (!currentParagraph) {
+          currentParagraph = document.createElement('p');
+        } else {
+          currentParagraph.appendChild(document.createElement('br'));
+        }
+        parseInline(line.trim(), currentParagraph);
+      });
+
+      flushParagraph();
+      return fragment;
+    }
+
+    // Follow-up suggestion mappings - prompts explicitly reference modifying the EXISTING pipeline
     var COMPONENT_SUGGESTIONS = {
       'kafka': [
-        { label: 'Add dead letter queue', prompt: 'Add a dead letter queue for failed messages to this pipeline' },
-        { label: 'Configure consumer groups', prompt: 'Configure consumer groups for load balancing' }
+        { label: 'Add dead letter queue', prompt: 'Modify the pipeline above: add a dead letter queue for failed messages' },
+        { label: 'Configure consumer groups', prompt: 'Modify the pipeline above: configure consumer groups for load balancing' }
       ],
       'aws_s3': [
-        { label: 'Add partitioning', prompt: 'Add date-based partitioning to the S3 path' },
-        { label: 'Add compression', prompt: 'Add gzip compression to the S3 output' }
+        { label: 'Add partitioning', prompt: 'Modify the pipeline above: add date-based partitioning to the S3 path' },
+        { label: 'Add compression', prompt: 'Modify the pipeline above: add gzip compression to the S3 output' }
       ],
       'http': [
-        { label: 'Add authentication', prompt: 'Add API key authentication to this pipeline' },
-        { label: 'Add rate limiting', prompt: 'Add rate limiting to the HTTP endpoint' }
+        { label: 'Add authentication', prompt: 'Modify the pipeline above: add API key authentication' },
+        { label: 'Add rate limiting', prompt: 'Modify the pipeline above: add rate limiting to the HTTP endpoint' }
       ],
       'elasticsearch': [
-        { label: 'Optimize bulk indexing', prompt: 'Optimize bulk indexing with batching' }
+        { label: 'Optimize bulk indexing', prompt: 'Modify the pipeline above: optimize bulk indexing with batching' }
       ],
       'mapping': [
-        { label: 'Add validation', prompt: 'Add schema validation to this pipeline' }
+        { label: 'Add validation', prompt: 'Modify the pipeline above: add schema validation' }
       ]
     };
 
     var GENERIC_SUGGESTIONS = [
-      { label: 'Add error handling', prompt: 'Add error handling and retry logic to this pipeline' },
-      { label: 'Add filtering', prompt: 'Add a filter to only process messages matching certain criteria' },
-      { label: 'Add batching', prompt: 'Add message batching before output' },
-      { label: 'Change output', prompt: 'Change the output destination to a different service' }
+      { label: 'Add error handling', prompt: 'Modify the pipeline above: add error handling and retry logic' },
+      { label: 'Add filtering', prompt: 'Modify the pipeline above: add a filter to only process certain messages' },
+      { label: 'Add batching', prompt: 'Modify the pipeline above: add message batching before output' },
+      { label: 'Change output', prompt: 'Modify the pipeline above: change the output to a different destination' },
+      { label: 'Start fresh (/new)', prompt: '/new' }
     ];
 
     function showFollowUpSuggestions(yaml) {
@@ -561,7 +707,13 @@ export function getChatHtml(): string {
 
       const div = document.createElement('div');
       div.className = 'message ' + role;
-      div.textContent = displayContent;
+
+      // Parse markdown for assistant messages, plain text for user
+      if (role === 'assistant') {
+        div.appendChild(parseMarkdown(displayContent));
+      } else {
+        div.textContent = displayContent;
+      }
 
       if (role === 'assistant' && sources && sources.length > 0) {
         const sourcesDiv = document.createElement('div');
@@ -612,6 +764,13 @@ export function getChatHtml(): string {
       e.preventDefault();
       const message = input.value.trim();
       if (!message || isLoading) return;
+
+      // Handle /new command
+      if (message.toLowerCase() === '/new') {
+        input.value = '';
+        resetChat();
+        return;
+      }
 
       isLoading = true;
       sendBtn.disabled = true;
@@ -690,6 +849,55 @@ export function getChatHtml(): string {
         });
       }
     }
+
+    // Reset chat function
+    function resetChat() {
+      // Clear history
+      history = [];
+      currentCode = '';
+
+      // Clear chat messages
+      var chat = document.getElementById('chat');
+      while (chat.firstChild) {
+        chat.removeChild(chat.firstChild);
+      }
+
+      // Recreate welcome section
+      var welcome = document.createElement('div');
+      welcome.className = 'welcome';
+      welcome.id = 'welcome';
+
+      var h2 = document.createElement('h2');
+      h2.textContent = 'Ask about Expanso';
+      welcome.appendChild(h2);
+
+      var p = document.createElement('p');
+      p.textContent = 'Chat with our documentation. I can help you with pipelines, CLI commands, deployment, and more.';
+      welcome.appendChild(p);
+
+      var examples = document.createElement('div');
+      examples.className = 'examples';
+      examples.id = 'examples';
+      var loading = document.createElement('span');
+      loading.className = 'loading-text';
+      loading.textContent = 'Loading examples...';
+      examples.appendChild(loading);
+      welcome.appendChild(examples);
+
+      chat.appendChild(welcome);
+
+      // Clear code panel
+      codeContent.textContent = '// Your pipeline will appear here';
+      feedbackButtons.style.display = 'none';
+      hideFollowUpSuggestions();
+
+      // Reload examples
+      loadExamples();
+      input.focus();
+    }
+
+    // New Chat button handler
+    document.getElementById('newChatBtn').onclick = resetChat;
 
     loadExamples();
     input.focus();

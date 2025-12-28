@@ -11,6 +11,7 @@ import { getChatHtml } from './chat-ui';
 import { trackChat, trackSearch, trackPageView, trackYamlFeedback, trackYamlGenerated, getDistinctId } from './analytics';
 import { validatePipelineYaml, formatValidationErrors } from './pipeline-validator';
 import { searchExamples, formatExamplesForContext, getRandomExamples, formatWelcomeExamples } from './examples-registry';
+import { generateComponentsSection, extractComponentsFromYaml } from './docs-links';
 
 export interface Env {
   AI: Ai;
@@ -320,26 +321,32 @@ async function handleChatApi(
   const examplesContext = formatExamplesForContext(matchingExamples);
   const hasExamples = matchingExamples.length > 0;
 
-  // Also search for relevant documentation (for supplementary context)
-  const searchResults = await handleSearch(env, body.message, 3);
-
-  // Fetch actual content from top results (not just metadata!)
+  // SPEED OPTIMIZATION: Skip slow semantic search if we have good example matches
+  // The examples contain validated YAML which is most important for pipeline questions
   let docsContext = '';
-  if (searchResults.results && searchResults.results.length > 0) {
-    const contentPromises = searchResults.results.slice(0, 3).map(async (r) => {
-      const content = await handleReadResource(env, r.uri);
-      if (content) {
-        // Truncate to avoid token limits (keep first ~2000 chars per doc)
-        const truncated = content.content.length > 2000
-          ? content.content.slice(0, 2000) + '\n...[truncated]'
-          : content.content;
-        return `## ${r.title}\nSource: ${r.uri}\n\n${truncated}`;
-      }
-      return null;
-    });
+  let searchResults: { results: Array<{ uri: string; title: string }> } = { results: [] };
 
-    const contents = await Promise.all(contentPromises);
-    docsContext = contents.filter(Boolean).join('\n\n---\n\n');
+  if (!hasExamples) {
+    // Only do expensive semantic search if no local examples matched
+    searchResults = await handleSearch(env, body.message, 2);
+
+    // Fetch actual content from top results (not just metadata!)
+    if (searchResults.results && searchResults.results.length > 0) {
+      const contentPromises = searchResults.results.slice(0, 2).map(async (r) => {
+        const content = await handleReadResource(env, r.uri);
+        if (content) {
+          // Truncate more aggressively to reduce tokens and speed up LLM
+          const truncated = content.content.length > 1500
+            ? content.content.slice(0, 1500) + '\n...[truncated]'
+            : content.content;
+          return `## ${r.title}\nSource: ${r.uri}\n\n${truncated}`;
+        }
+        return null;
+      });
+
+      const contents = await Promise.all(contentPromises);
+      docsContext = contents.filter(Boolean).join('\n\n---\n\n');
+    }
   }
 
   // Combine: Examples first (if any), then docs
@@ -355,11 +362,17 @@ When the user asks for a pipeline, you MUST:
 3. NEVER generate YAML from scratch - always start from a validated example
 4. If no example matches, say "I don't have a validated example for that use case" and suggest the closest alternative
 
-` : ''}CRITICAL RULES:
+` : ''}COMMUNICATION STYLE:
+- Write in plain, simple English - avoid jargon
+- Keep explanations SHORT (2-3 sentences max per point)
+- Use bullet points, not paragraphs
+- Be direct: "This reads from X and writes to Y"
+
+CRITICAL RULES:
 1. ONLY use information from the context below - NEVER make up YAML, commands, or examples
 2. If the context doesn't contain what the user needs, say "I don't have that information in the current documentation"
 3. Always preserve the exact YAML structure from examples - only change values, not structure
-4. Cite sources with markdown links
+4. Use precise verbs: inputs "read from", outputs "write to", processors "transform". Never say "learns" or "understands".
 
 PIPELINE YAML FORMAT - THIS IS MANDATORY:
 A pipeline is ONE YAML document with input, pipeline, and output sections.
@@ -417,10 +430,10 @@ ${context || 'No relevant documentation found for this query.'}`;
   // Add current message
   messages.push({ role: 'user', content: body.message });
 
-  // Call Workers AI (cast to any to allow model name)
-  const response = await (env.AI.run as Function)('@cf/meta/llama-3.1-8b-instruct', {
+  // Call Workers AI - using 8B-fast with speculative decoding for speed + quality
+  const response = await (env.AI.run as Function)('@cf/meta/llama-3.1-8b-instruct-fast', {
     messages,
-    max_tokens: 1024,
+    max_tokens: 768,
   });
 
   // Map sources to include url for frontend
@@ -492,6 +505,14 @@ ${context || 'No relevant documentation found for this query.'}`;
     responseText += '\n\n---\n**Warning: Pipeline Validation Issue**\n' +
       validationWarnings.join('\n\n') +
       '\n\nPlease refer to the [Components documentation](https://docs.expanso.io/components) for valid pipeline syntax.';
+  }
+
+  // Add validated component documentation links for any YAML in the response
+  if (yamlBlocks.length > 0) {
+    const componentsSection = generateComponentsSection(yamlBlocks[0]);
+    if (componentsSection) {
+      responseText += '\n\n' + componentsSection;
+    }
   }
 
   // Track chat (non-blocking)
