@@ -7,6 +7,7 @@
 
 import type { Env } from './index';
 import { handleSearch, handleListResources, handleReadResource } from './handlers';
+import { validatePipelineYaml } from './pipeline-validator';
 
 // MCP Protocol types
 interface McpRequest {
@@ -79,7 +80,112 @@ const TOOLS = [
       properties: {},
     },
   },
+  {
+    name: 'validate_pipeline',
+    description:
+      'Validate an Expanso pipeline YAML configuration. Returns detailed errors with fix suggestions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        yaml: {
+          type: 'string',
+          description: 'Pipeline YAML to validate',
+        },
+        include_external: {
+          type: 'boolean',
+          description:
+            'Also validate against Expanso external validator (slower but authoritative)',
+          default: true,
+        },
+      },
+      required: ['yaml'],
+    },
+  },
 ];
+
+// ============================================================================
+// Pipeline Validation Helpers
+// ============================================================================
+
+/**
+ * Call the external Expanso validator API
+ * Fails open on errors (returns valid) to avoid blocking on external service issues
+ */
+async function callExternalValidator(
+  yaml: string
+): Promise<{ valid: boolean; errors: string[] }> {
+  try {
+    const response = await fetch('https://validate.expanso.io/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: yaml,
+    });
+
+    if (!response.ok) {
+      // Fail open on server errors
+      if (response.status >= 500) {
+        console.error('External validator 5xx error:', response.status);
+        return { valid: true, errors: [] };
+      }
+      const text = await response.text();
+      return { valid: false, errors: [text] };
+    }
+
+    const text = await response.text();
+    if (!text || text.trim() === '') {
+      return { valid: true, errors: [] };
+    }
+
+    // Parse validation errors from response
+    return { valid: false, errors: text.split('\n').filter(Boolean) };
+  } catch (error) {
+    // Fail open on network errors
+    console.error('External validator error:', error);
+    return { valid: true, errors: [] };
+  }
+}
+
+/**
+ * Validation result format for MCP tool response
+ */
+interface McpValidationResult {
+  valid: boolean;
+  errors: Array<{
+    path: string;
+    message: string;
+    suggestion?: string;
+  }>;
+  warnings: string[];
+  external_validation?: {
+    valid: boolean;
+    errors: string[];
+  };
+}
+
+/**
+ * Orchestrate pipeline validation combining local and external validators
+ */
+async function validatePipelineForMcp(
+  yaml: string,
+  includeExternal: boolean
+): Promise<McpValidationResult> {
+  // Run local validation
+  const localResult = validatePipelineYaml(yaml);
+
+  // Optionally run external validation
+  let externalResult: { valid: boolean; errors: string[] } | undefined;
+  if (includeExternal) {
+    externalResult = await callExternalValidator(yaml);
+  }
+
+  // Combine results
+  return {
+    valid: localResult.valid && (externalResult?.valid ?? true),
+    errors: localResult.errors,
+    warnings: localResult.warnings,
+    external_validation: externalResult,
+  };
+}
 
 // Handle MCP JSON-RPC request
 export async function handleMcpRequest(request: Request, env: Env): Promise<Response> {
@@ -315,6 +421,30 @@ async function handleToolCall(
             {
               type: 'text',
               text: JSON.stringify(resources, null, 2),
+            },
+          ],
+        },
+      };
+    }
+
+    case 'validate_pipeline': {
+      const yaml = args?.yaml as string;
+      const includeExternal = (args?.include_external as boolean) ?? true;
+
+      if (!yaml) {
+        return errorResponse(id, -32602, 'Missing required argument: yaml');
+      }
+
+      const result = await validatePipelineForMcp(yaml, includeExternal);
+
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
             },
           ],
         },
