@@ -137,6 +137,9 @@ export default {
         case '/api/yaml-export':
           return handleYamlExportApi(request, env, corsHeaders);
 
+        case '/api/validate':
+          return handleValidateApi(request, env, corsHeaders);
+
         // Serve discovery document
         case '/.well-known/mcp.json':
           return jsonResponse(getMcpDiscovery(url.origin), corsHeaders);
@@ -277,6 +280,52 @@ async function handleYamlFeedbackApi(
   }, headers);
 }
 
+// HTTP API: Validate YAML
+async function handleValidateApi(
+  request: Request,
+  env: Env,
+  headers: Record<string, string>
+): Promise<Response> {
+  if (request.method !== 'POST') {
+    return jsonResponse({ error: 'Method not allowed' }, headers, 405);
+  }
+
+  let body: { yaml: string };
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON body' }, headers, 400);
+  }
+
+  if (!body.yaml) {
+    return jsonResponse({ error: 'Missing yaml field' }, headers, 400);
+  }
+
+  // Run local validation
+  const localResult = validatePipelineYaml(body.yaml);
+
+  // Run external Expanso validation
+  const externalResult = await validateWithExpanso(body.yaml);
+
+  // Combine results
+  const allErrors: Array<{ path: string; message: string; suggestion?: string } | string> = [
+    ...localResult.errors.map(e => ({
+      path: e.path,
+      message: e.message,
+      suggestion: e.suggestion,
+    })),
+    ...externalResult.errors,
+  ];
+
+  const isValid = localResult.valid && externalResult.valid;
+
+  return jsonResponse({
+    valid: isValid,
+    errors: allErrors,
+    warnings: localResult.warnings,
+  }, headers);
+}
+
 // HTTP API: Export stored YAML data
 async function handleYamlExportApi(
   request: Request,
@@ -360,7 +409,11 @@ async function handleChatApi(
     return jsonResponse({ error: 'Method not allowed' }, headers, 405);
   }
 
-  let body: { message: string; history?: Array<{ role: string; content: string }> };
+  let body: {
+    message: string;
+    history?: Array<{ role: string; content: string }>;
+    currentYaml?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -370,6 +423,11 @@ async function handleChatApi(
   if (!body.message) {
     return jsonResponse({ error: 'Missing message field' }, headers, 400);
   }
+
+  // If user has a current YAML, include it in the message context
+  const currentPipelineContext = body.currentYaml
+    ? `\n\nCURRENT PIPELINE (user may have edited this - use as the basis for modifications):\n\`\`\`yaml\n${body.currentYaml}\n\`\`\`\n`
+    : '';
 
   // EXAMPLES-FIRST RAG: Find matching examples BEFORE searching docs
   const matchingExamples = searchExamples(body.message, 3);
@@ -482,8 +540,11 @@ ${context || 'No relevant documentation found for this query.'}`;
     }
   }
 
-  // Add current message
-  messages.push({ role: 'user', content: body.message });
+  // Add current message (with current pipeline context if user has one)
+  const userMessage = currentPipelineContext
+    ? `${body.message}${currentPipelineContext}`
+    : body.message;
+  messages.push({ role: 'user', content: userMessage });
 
   // Call Workers AI - using 8B-fast with speculative decoding for speed + quality
   const response = await (env.AI.run as Function)('@cf/meta/llama-3.1-8b-instruct-fast', {

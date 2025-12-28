@@ -129,19 +129,62 @@ export function getChatHtml(): string {
     }
     .code-content {
       flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .code-editor {
+      flex: 1;
+      width: 100%;
       padding: 1.5rem;
-      overflow: auto;
+      border: none;
+      background: transparent;
       font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
       font-size: 14px;
       line-height: 1.6;
-      white-space: pre;
       color: #f5f5f5;
+      resize: none;
+      outline: none;
     }
-    .code-content .empty-state {
+    .code-editor::placeholder {
       color: var(--text-muted);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-style: italic;
-      white-space: normal;
+    }
+    .validation-result {
+      padding: 0.75rem 1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.8rem;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    .validation-result.valid {
+      background: rgba(34, 197, 94, 0.1);
+      color: #86efac;
+    }
+    .validation-result.invalid {
+      background: rgba(239, 68, 68, 0.1);
+      color: #fca5a5;
+    }
+    .validation-result ul {
+      margin: 0.5rem 0 0 1.25rem;
+      padding: 0;
+    }
+    .validation-result li {
+      margin: 0.25rem 0;
+    }
+    .validate-btn {
+      background: var(--primary) !important;
+      border-color: var(--primary) !important;
+      color: white !important;
+    }
+    .validate-btn:hover {
+      background: var(--primary-hover) !important;
+      border-color: var(--primary-hover) !important;
+    }
+    .validate-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
     .yaml-key { color: #93c5fd; }
     .yaml-string { color: #86efac; }
@@ -385,10 +428,12 @@ export function getChatHtml(): string {
           <button onclick="submitFeedback(true)" class="valid" id="validBtn" title="This YAML is correct">Yes</button>
           <button onclick="submitFeedback(false)" class="invalid" id="invalidBtn" title="This YAML has issues">No</button>
         </div>
+        <button onclick="validateCode()" id="validateBtn" class="validate-btn">Validate</button>
         <button onclick="copyCode()" id="copyBtn">Copy</button>
       </div>
       <div class="code-content" id="codeContent">
-        <span class="empty-state">Pipeline YAML will appear here when discussing configurations...</span>
+        <textarea id="codeEditor" class="code-editor" placeholder="Pipeline YAML will appear here when discussing configurations...&#10;&#10;You can edit the YAML directly and click Validate to check it." spellcheck="false"></textarea>
+        <div id="validationResult" class="validation-result" style="display: none;"></div>
       </div>
     </div>
   </div>
@@ -398,6 +443,9 @@ export function getChatHtml(): string {
     const input = document.getElementById('input');
     const sendBtn = document.getElementById('send');
     const codeContent = document.getElementById('codeContent');
+    const codeEditor = document.getElementById('codeEditor');
+    const validationResult = document.getElementById('validationResult');
+    const validateBtn = document.getElementById('validateBtn');
     const feedbackButtons = document.getElementById('feedbackButtons');
     const validBtn = document.getElementById('validBtn');
     const invalidBtn = document.getElementById('invalidBtn');
@@ -406,6 +454,13 @@ export function getChatHtml(): string {
     let currentCode = '';
     let lastUserMessage = '';
     let feedbackSubmitted = false;
+
+    // Keep currentCode in sync with textarea edits
+    codeEditor.addEventListener('input', function() {
+      currentCode = codeEditor.value;
+      // Clear validation result when user edits
+      validationResult.style.display = 'none';
+    });
 
     function highlightYaml(code) {
       return code
@@ -618,16 +673,71 @@ export function getChatHtml(): string {
     function updateCodePanel(yaml) {
       if (yaml) {
         currentCode = yaml;
-        codeContent.innerHTML = highlightYaml(yaml);
+        codeEditor.value = yaml;
         feedbackButtons.style.display = 'flex';
+        validationResult.style.display = 'none';
         resetFeedback();
         showFollowUpSuggestions(yaml);
       }
     }
 
+    async function validateCode() {
+      var yaml = codeEditor.value.trim();
+      if (!yaml) {
+        validationResult.className = 'validation-result invalid';
+        validationResult.textContent = 'No YAML to validate';
+        validationResult.style.display = 'block';
+        return;
+      }
+
+      validateBtn.disabled = true;
+      validateBtn.textContent = 'Validating...';
+
+      try {
+        var res = await fetch('/api/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ yaml: yaml })
+        });
+        var data = await res.json();
+
+        if (data.valid) {
+          validationResult.className = 'validation-result valid';
+          validationResult.innerHTML = '\\u2713 Pipeline is valid';
+        } else {
+          validationResult.className = 'validation-result invalid';
+          var errors = data.errors || [];
+          if (errors.length > 0) {
+            var errorList = document.createElement('ul');
+            errors.forEach(function(err) {
+              var li = document.createElement('li');
+              li.textContent = typeof err === 'string' ? err : (err.path + ': ' + err.message);
+              errorList.appendChild(li);
+            });
+            validationResult.innerHTML = '';
+            var title = document.createElement('strong');
+            title.textContent = '\\u2717 Validation Errors:';
+            validationResult.appendChild(title);
+            validationResult.appendChild(errorList);
+          } else {
+            validationResult.textContent = '\\u2717 Pipeline has validation errors';
+          }
+        }
+        validationResult.style.display = 'block';
+      } catch (err) {
+        validationResult.className = 'validation-result invalid';
+        validationResult.textContent = 'Validation request failed: ' + err.message;
+        validationResult.style.display = 'block';
+      } finally {
+        validateBtn.disabled = false;
+        validateBtn.textContent = 'Validate';
+      }
+    }
+
     function copyCode() {
-      if (currentCode) {
-        navigator.clipboard.writeText(currentCode).then(function() {
+      var codeToCopy = codeEditor.value.trim();
+      if (codeToCopy) {
+        navigator.clipboard.writeText(codeToCopy).then(function() {
           var btn = document.getElementById('copyBtn');
           btn.textContent = 'Copied!';
           setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
@@ -781,10 +891,17 @@ export function getChatHtml(): string {
       addLoading();
 
       try {
+        // Include current YAML if user has edited it
+        var currentYaml = codeEditor.value.trim();
+        var payload = { message: message, history: history };
+        if (currentYaml) {
+          payload.currentYaml = currentYaml;
+        }
+
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: message, history: history })
+          body: JSON.stringify(payload)
         });
 
         const data = await res.json();
