@@ -13,6 +13,61 @@ import { validatePipelineYaml, formatValidationErrors } from './pipeline-validat
 import { searchExamples, formatExamplesForContext, getRandomExamples, formatWelcomeExamples } from './examples-registry';
 import { generateComponentsSection, extractComponentsFromYaml } from './docs-links';
 
+// External Expanso validator
+interface ExternalValidationResult {
+  valid: boolean;
+  errors: string[];
+  formatted?: string;
+}
+
+async function validateWithExpanso(yaml: string): Promise<ExternalValidationResult> {
+  try {
+    const response = await fetch('https://validate.expanso.io/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: yaml,
+    });
+
+    if (!response.ok) {
+      // Validation endpoint returned error - treat as invalid
+      const errorText = await response.text();
+      return {
+        valid: false,
+        errors: [errorText || `Validation failed with status ${response.status}`],
+      };
+    }
+
+    const result = await response.json() as Record<string, unknown> | null;
+
+    // Handle different response formats
+    if (result && typeof result === 'object') {
+      if ('valid' in result && typeof result.valid === 'boolean') {
+        const errors = Array.isArray(result.errors) ? result.errors as string[] :
+                       Array.isArray(result.issues) ? result.issues as string[] : [];
+        return {
+          valid: result.valid,
+          errors,
+          formatted: typeof result.formatted === 'string' ? result.formatted : undefined,
+        };
+      }
+      // If response has lint_errors or similar
+      if ('lint_errors' in result && Array.isArray(result.lint_errors)) {
+        return {
+          valid: result.lint_errors.length === 0,
+          errors: result.lint_errors as string[],
+        };
+      }
+    }
+
+    // If we got a 200 with no clear error structure, assume valid
+    return { valid: true, errors: [] };
+  } catch (error) {
+    // Network error - don't block, just log
+    console.error('External validation error:', error);
+    return { valid: true, errors: [] }; // Fail open on network issues
+  }
+}
+
 export interface Env {
   AI: Ai;
   VECTORIZE?: VectorizeIndex; // Optional - requires vectorize:create permission
@@ -450,22 +505,29 @@ ${context || 'No relevant documentation found for this query.'}`;
   const distinctId = getDistinctId(request);
 
   for (const yaml of yamlBlocks) {
-    const result = validatePipelineYaml(yaml);
+    // Run local validation first (fast)
+    const localResult = validatePipelineYaml(yaml);
+
+    // Run external Expanso validation (authoritative)
+    const externalResult = await validateWithExpanso(yaml);
 
     // Generate unique ID for this YAML
     const yamlId = `yaml_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    // Categorize errors
-    const structureErrors = result.errors
+    // Categorize local errors
+    const structureErrors = localResult.errors
       .filter(e => e.path === 'root' || e.path.startsWith('root.') || e.path === 'pipeline')
       .map(e => `${e.path}: ${e.message}`);
-    const bloblangErrors = result.errors
+    const bloblangErrors = localResult.errors
       .filter(e => e.path.includes('mapping') || e.path.includes('bloblang'))
       .map(e => `${e.path}: ${e.message}`);
-    const componentErrors = result.errors
+    const componentErrors = localResult.errors
       .filter(e => !structureErrors.includes(`${e.path}: ${e.message}`) &&
                    !bloblangErrors.includes(`${e.path}: ${e.message}`))
       .map(e => `${e.path}: ${e.message}`);
+
+    // Combined validity: both must pass
+    const isValid = localResult.valid && externalResult.valid;
 
     // Store full YAML in KV (non-blocking)
     if (env.CONTENT_CACHE) {
@@ -473,10 +535,12 @@ ${context || 'No relevant documentation found for this query.'}`;
         yaml,
         userMessage: body.message,
         timestamp: new Date().toISOString(),
-        validatorValid: result.valid,
+        localValid: localResult.valid,
+        externalValid: externalResult.valid,
         structureErrors,
         bloblangErrors,
         componentErrors,
+        externalErrors: externalResult.errors,
       }), { expirationTtl: 60 * 60 * 24 * 90 }) // Keep for 90 days
         .catch(() => {});
     }
@@ -488,15 +552,19 @@ ${context || 'No relevant documentation found for this query.'}`;
       yaml,
       body.message,
       {
-        valid: result.valid,
-        errors: result.errors.map(e => `${e.path}: ${e.message}`),
-        warnings: result.warnings,
+        valid: isValid,
+        errors: [...localResult.errors.map(e => `${e.path}: ${e.message}`), ...externalResult.errors],
+        warnings: localResult.warnings,
       },
       yamlId
     ).catch(() => {});
 
-    if (!result.valid) {
-      validationWarnings.push(formatValidationErrors(result));
+    // Add warnings for any validation failures
+    if (!localResult.valid) {
+      validationWarnings.push(formatValidationErrors(localResult));
+    }
+    if (!externalResult.valid && externalResult.errors.length > 0) {
+      validationWarnings.push('**Expanso Validation Errors:**\n' + externalResult.errors.map(e => `- ${e}`).join('\n'));
     }
   }
 
