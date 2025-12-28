@@ -1,0 +1,38 @@
+# Expanso MCP Server
+# Provides semantic search and retrieval over Expanso documentation
+
+name = "expanso-mcp-server"
+account_id = "d1c1c1ca949d314db89a2ac4a67e5734"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Custom domain: mcp.expanso.io
+routes = [{ pattern = "mcp.expanso.io", custom_domain = true }]
+
+# Workers AI for embeddings
+[ai]
+binding = "AI"
+
+# Vectorize for semantic search
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "expanso-docs"
+
+# KV for caching llms.txt content
+[[kv_namespaces]]
+binding = "CONTENT_CACHE"
+id = "3c147228e7d04ac8926137d8214c2a6c"
+
+# Environment variables
+[vars]
+DOCS_DOMAINS = "expanso.io,docs.expanso.io,examples.expanso.io"
+POSTHOG_API_KEY = "phc_f467hBf7ZUEc5HDT3xFcbhZ4tL7wUYJH0COw9Y2bzSK"
+
+# Development environment
+[env.dev]
+name = "expanso-mcp-server-dev"
+
+[env.dev.vars]
+DOCS_DOMAINS = "expanso.io,docs.expanso.io,examples.expanso.io"
+POSTHOG_API_KEY = "phc_f467hBf7ZUEc5HDT3xFcbhZ4tL7wUYJH0COw9Y2bzSK"

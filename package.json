@@ -1,0 +1,25 @@
+{
+  "name": "expanso-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Expanso documentation - semantic search and retrieval",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "./scripts/deploy.sh",
+    "deploy:worker-only": "wrangler deploy",
+    "tail": "wrangler tail",
+    "typecheck": "tsc --noEmit",
+    "index": "npx tsx scripts/index-content.ts",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "wrangler": "^3.99.0"
+  },
+  "dependencies": {
+    "posthog-node": "^5.18.0",
+    "yaml": "^2.8.2"
+  }
+}
