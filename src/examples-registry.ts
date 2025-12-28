@@ -636,3 +636,31 @@ The following examples are production-validated. ADAPT these examples for the us
 
 ${sections.join('\n---\n')}`;
 }
+
+/**
+ * Welcome example format for API response
+ */
+export interface WelcomeExample {
+  id: string;
+  name: string;
+  prompt: string;
+}
+
+/**
+ * Get random examples for welcome screen
+ */
+export function getRandomExamples(count: number = 6): PipelineExample[] {
+  const shuffled = [...PIPELINE_EXAMPLES].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, Math.min(count, PIPELINE_EXAMPLES.length));
+}
+
+/**
+ * Format examples for welcome screen API
+ */
+export function formatWelcomeExamples(examples: PipelineExample[]): WelcomeExample[] {
+  return examples.map(ex => ({
+    id: ex.id,
+    name: ex.name,
+    prompt: `Show me a ${ex.name.toLowerCase()} pipeline`,
+  }));
+}

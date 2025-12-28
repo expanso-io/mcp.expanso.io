@@ -266,6 +266,42 @@ export function getChatHtml(): string {
       background: var(--surface-hover);
       border-color: var(--primary);
     }
+    .loading-text {
+      color: var(--text-muted);
+      font-style: italic;
+      font-size: 0.875rem;
+    }
+    .follow-ups {
+      padding: 0.75rem 1.5rem;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .follow-ups-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-right: 0.5rem;
+    }
+    .follow-ups-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .follow-ups-chips button {
+      padding: 0.375rem 0.75rem;
+      font-size: 0.8125rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+    }
+    .follow-ups-chips button:hover {
+      border-color: var(--primary);
+      background: var(--surface-hover);
+    }
+    .follow-ups-chips button.contextual {
+      border-color: var(--primary);
+      background: rgba(167, 139, 250, 0.1);
+    }
   </style>
 </head>
 <body>
@@ -282,12 +318,15 @@ export function getChatHtml(): string {
         <div class="welcome" id="welcome">
           <h2>Ask about Expanso</h2>
           <p>Chat with our documentation. I can help you with pipelines, CLI commands, deployment, and more.</p>
-          <div class="examples">
-            <button onclick="askQuestion('How do I install Expanso?')">Install Expanso</button>
-            <button onclick="askQuestion('What is a pipeline component?')">Pipeline components</button>
-            <button onclick="askQuestion('Show me a Kafka to S3 pipeline')">Kafka to S3 pipeline</button>
+          <div class="examples" id="examples">
+            <span class="loading-text">Loading examples...</span>
           </div>
         </div>
+      </div>
+
+      <div class="follow-ups" id="followUps" style="display: none;">
+        <span class="follow-ups-label">Try next:</span>
+        <div class="follow-ups-chips" id="followUpsChips"></div>
       </div>
 
       <div class="input-container">
@@ -352,12 +391,91 @@ export function getChatHtml(): string {
       return text.replace(/\`\`\`(?:yaml|yml)?\\n[\\s\\S]*?\`\`\`/g, '[See pipeline in right panel]').trim();
     }
 
+    // Follow-up suggestion mappings
+    var COMPONENT_SUGGESTIONS = {
+      'kafka': [
+        { label: 'Add dead letter queue', prompt: 'Add a dead letter queue for failed messages to this pipeline' },
+        { label: 'Configure consumer groups', prompt: 'Configure consumer groups for load balancing' }
+      ],
+      'aws_s3': [
+        { label: 'Add partitioning', prompt: 'Add date-based partitioning to the S3 path' },
+        { label: 'Add compression', prompt: 'Add gzip compression to the S3 output' }
+      ],
+      'http': [
+        { label: 'Add authentication', prompt: 'Add API key authentication to this pipeline' },
+        { label: 'Add rate limiting', prompt: 'Add rate limiting to the HTTP endpoint' }
+      ],
+      'elasticsearch': [
+        { label: 'Optimize bulk indexing', prompt: 'Optimize bulk indexing with batching' }
+      ],
+      'mapping': [
+        { label: 'Add validation', prompt: 'Add schema validation to this pipeline' }
+      ]
+    };
+
+    var GENERIC_SUGGESTIONS = [
+      { label: 'Add error handling', prompt: 'Add error handling and retry logic to this pipeline' },
+      { label: 'Add filtering', prompt: 'Add a filter to only process messages matching certain criteria' },
+      { label: 'Add batching', prompt: 'Add message batching before output' },
+      { label: 'Change output', prompt: 'Change the output destination to a different service' }
+    ];
+
+    function showFollowUpSuggestions(yaml) {
+      var suggestions = [];
+      var yamlLower = yaml.toLowerCase();
+
+      // Find contextual suggestions based on detected components
+      for (var comp in COMPONENT_SUGGESTIONS) {
+        if (yamlLower.indexOf(comp) !== -1) {
+          var compSuggestions = COMPONENT_SUGGESTIONS[comp];
+          for (var i = 0; i < Math.min(1, compSuggestions.length); i++) {
+            suggestions.push({ label: compSuggestions[i].label, prompt: compSuggestions[i].prompt, contextual: true });
+          }
+        }
+      }
+      // Limit contextual to 2
+      suggestions = suggestions.slice(0, 2);
+
+      // Add generic suggestions to fill up to 5 total
+      var remaining = 5 - suggestions.length;
+      for (var i = 0; i < remaining && i < GENERIC_SUGGESTIONS.length; i++) {
+        suggestions.push({ label: GENERIC_SUGGESTIONS[i].label, prompt: GENERIC_SUGGESTIONS[i].prompt, contextual: false });
+      }
+
+      // Render using safe DOM methods
+      var chips = document.getElementById('followUpsChips');
+      while (chips.firstChild) {
+        chips.removeChild(chips.firstChild);
+      }
+      suggestions.forEach(function(s) {
+        var btn = document.createElement('button');
+        btn.textContent = s.label;
+        if (s.contextual) {
+          btn.className = 'contextual';
+        }
+        btn.onclick = function() { askFollowUp(s.prompt); };
+        chips.appendChild(btn);
+      });
+      document.getElementById('followUps').style.display = 'block';
+    }
+
+    function hideFollowUpSuggestions() {
+      document.getElementById('followUps').style.display = 'none';
+    }
+
+    function askFollowUp(prompt) {
+      hideFollowUpSuggestions();
+      input.value = prompt;
+      sendMessage({ preventDefault: function() {} });
+    }
+
     function updateCodePanel(yaml) {
       if (yaml) {
         currentCode = yaml;
         codeContent.innerHTML = highlightYaml(yaml);
         feedbackButtons.style.display = 'flex';
         resetFeedback();
+        showFollowUpSuggestions(yaml);
       }
     }
 
@@ -535,6 +653,45 @@ export function getChatHtml(): string {
       sendMessage({ preventDefault: function() {} });
     }
 
+    // Load dynamic examples from API
+    async function loadExamples() {
+      var container = document.getElementById('examples');
+      try {
+        var res = await fetch('/api/examples');
+        var data = await res.json();
+        if (data.examples && data.examples.length > 0) {
+          // Clear loading text
+          while (container.firstChild) {
+            container.removeChild(container.firstChild);
+          }
+          // Create buttons using safe DOM methods
+          data.examples.forEach(function(ex) {
+            var btn = document.createElement('button');
+            btn.textContent = ex.name;
+            btn.onclick = function() { askQuestion(ex.prompt); };
+            container.appendChild(btn);
+          });
+        }
+      } catch (err) {
+        // Fallback to static examples on error
+        while (container.firstChild) {
+          container.removeChild(container.firstChild);
+        }
+        var fallbacks = [
+          { name: 'Install Expanso', prompt: 'How do I install Expanso?' },
+          { name: 'Pipeline components', prompt: 'What is a pipeline component?' },
+          { name: 'Kafka to S3', prompt: 'Show me a Kafka to S3 pipeline' }
+        ];
+        fallbacks.forEach(function(ex) {
+          var btn = document.createElement('button');
+          btn.textContent = ex.name;
+          btn.onclick = function() { askQuestion(ex.prompt); };
+          container.appendChild(btn);
+        });
+      }
+    }
+
+    loadExamples();
     input.focus();
   </script>
 </body>

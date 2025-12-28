@@ -10,7 +10,7 @@ import { handleSearch, handleListResources, handleReadResource } from './handler
 import { getChatHtml } from './chat-ui';
 import { trackChat, trackSearch, trackPageView, trackYamlFeedback, trackYamlGenerated, getDistinctId } from './analytics';
 import { validatePipelineYaml, formatValidationErrors } from './pipeline-validator';
-import { searchExamples, formatExamplesForContext } from './examples-registry';
+import { searchExamples, formatExamplesForContext, getRandomExamples, formatWelcomeExamples } from './examples-registry';
 
 export interface Env {
   AI: Ai;
@@ -71,6 +71,9 @@ export default {
 
         case '/api/resources':
           return handleResourcesApi(request, env, corsHeaders);
+
+        case '/api/examples':
+          return handleExamplesApi(corsHeaders);
 
         case '/api/yaml-feedback':
           return handleYamlFeedbackApi(request, env, corsHeaders);
@@ -138,6 +141,15 @@ async function handleResourcesApi(
 ): Promise<Response> {
   const resources = await handleListResources(env);
   return jsonResponse(resources, headers);
+}
+
+// HTTP API: Get random examples for welcome screen
+function handleExamplesApi(
+  headers: Record<string, string>
+): Response {
+  const examples = getRandomExamples(6);
+  const formatted = formatWelcomeExamples(examples);
+  return jsonResponse({ examples: formatted, total: 16 }, headers);
 }
 
 // HTTP API: Read resource
