@@ -21,6 +21,7 @@ import {
   formatBloblangReference,
   type BloblangCategory,
 } from './bloblang-reference';
+import { suggestWithFallback } from './pattern-suggester';
 
 // MCP Protocol types
 interface McpRequest {
@@ -168,6 +169,37 @@ const TOOLS = [
           description: 'Search term to filter by name or description',
         },
       },
+    },
+  },
+  {
+    name: 'suggest_pipeline_pattern',
+    description:
+      'Get pipeline pattern suggestions based on a natural language use case description. Returns relevant examples with explanations and customization hints.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        use_case: {
+          type: 'string',
+          description:
+            'Natural language description of what you want to build (e.g., "consume from kafka and write to s3", "filter events and send to slack")',
+        },
+        input_type: {
+          type: 'string',
+          description:
+            'Optional: filter by source system (kafka, http, s3, database)',
+        },
+        output_type: {
+          type: 'string',
+          description:
+            'Optional: filter by destination system (kafka, s3, elasticsearch, webhook)',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum suggestions to return (default: 3)',
+          default: 3,
+        },
+      },
+      required: ['use_case'],
     },
   },
 ];
@@ -687,6 +719,37 @@ async function handleToolCall(
             {
               type: 'text',
               text: formatBloblangReference(items),
+            },
+          ],
+        },
+      };
+    }
+
+    case 'suggest_pipeline_pattern': {
+      const use_case = args?.use_case as string;
+      const input_type = args?.input_type as string | undefined;
+      const output_type = args?.output_type as string | undefined;
+      const limit = Math.min((args?.limit as number) || 3, 10);
+
+      if (!use_case) {
+        return errorResponse(id, -32602, 'Missing required argument: use_case');
+      }
+
+      const result = suggestWithFallback({
+        use_case,
+        input_type,
+        output_type,
+        limit,
+      });
+
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
             },
           ],
         },
