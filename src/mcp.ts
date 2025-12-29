@@ -16,6 +16,14 @@ import {
   type ComponentCategory,
 } from './component-schemas';
 import {
+  listComponents,
+  getAvailableTags,
+  getCategoryCounts,
+  formatComponentList,
+  type ComponentCategory as CatalogCategory,
+  type ComponentTag,
+} from './component-catalog';
+import {
   getByCategory,
   searchBloblang,
   formatBloblangReference,
@@ -226,6 +234,50 @@ const TOOLS = [
         },
       },
       required: ['error_message'],
+    },
+  },
+  {
+    name: 'list_components',
+    description:
+      'List available Expanso pipeline components with filtering by category, tag, or search term. Use this to discover what inputs, processors, and outputs are available.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        category: {
+          type: 'string',
+          enum: ['input', 'processor', 'output', 'cache', 'buffer', 'all'],
+          description: 'Filter by component category (default: all)',
+        },
+        tag: {
+          type: 'string',
+          enum: [
+            'messaging',
+            'cloud',
+            'database',
+            'http',
+            'file',
+            'ai',
+            'transform',
+            'utility',
+            'observability',
+            'aws',
+            'gcp',
+            'azure',
+            'streaming',
+          ],
+          description: 'Filter by component tag/domain',
+        },
+        search: {
+          type: 'string',
+          description: 'Search term to filter by name or description',
+        },
+        format: {
+          type: 'string',
+          enum: ['summary', 'detailed'],
+          description: 'Output format: summary (names only) or detailed (with descriptions)',
+          default: 'detailed',
+        },
+      },
     },
   },
 ];
@@ -805,6 +857,60 @@ async function handleToolCall(
             {
               type: 'text',
               text: JSON.stringify(result, null, 2),
+            },
+          ],
+        },
+      };
+    }
+
+    case 'list_components': {
+      const category = (args?.category as CatalogCategory | 'all') || 'all';
+      const tag = args?.tag as ComponentTag | undefined;
+      const search = args?.search as string | undefined;
+      const format = (args?.format as 'summary' | 'detailed') || 'detailed';
+
+      const result = listComponents({ category, tag, search });
+
+      // Summary format: just names grouped by category
+      if (format === 'summary') {
+        const summary: Record<string, string[]> = {};
+        for (const comp of result.components) {
+          const cat = comp.category;
+          if (!summary[cat]) summary[cat] = [];
+          summary[cat].push(comp.name);
+        }
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    total: result.count,
+                    by_category: summary,
+                    available_tags: getAvailableTags().slice(0, 10),
+                    category_counts: getCategoryCounts(),
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          },
+        };
+      }
+
+      // Detailed format: full component list with descriptions
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: formatComponentList(result),
             },
           ],
         },
