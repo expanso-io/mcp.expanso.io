@@ -13,13 +13,19 @@ dev:
 deploy:
     #!/usr/bin/env bash
     set -a; source .env 2>/dev/null; set +a
+    # Temporarily disable parent Yarn PnP
+    [ -f ../../.pnp.cjs ] && mv ../../.pnp.cjs ../../.pnp.cjs.bak
     CLOUDFLARE_API_TOKEN="${CLOUDFLARE_TOKEN_API_MCP_EXPANSO_IO}" ./scripts/deploy.sh
+    [ -f ../../.pnp.cjs.bak ] && mv ../../.pnp.cjs.bak ../../.pnp.cjs
 
 # Load .env and deploy worker only (skip indexing)
 deploy-worker:
     #!/usr/bin/env bash
     set -a; source .env 2>/dev/null; set +a
+    # Temporarily disable parent Yarn PnP
+    [ -f ../../.pnp.cjs ] && mv ../../.pnp.cjs ../../.pnp.cjs.bak
     CLOUDFLARE_API_TOKEN="${CLOUDFLARE_TOKEN_API_MCP_EXPANSO_IO}" npx wrangler deploy --env=""
+    [ -f ../../.pnp.cjs.bak ] && mv ../../.pnp.cjs.bak ../../.pnp.cjs
 
 # View production logs
 tail:
