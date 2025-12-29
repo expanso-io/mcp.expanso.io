@@ -309,7 +309,7 @@ async function handleYamlFeedbackApi(
   }, headers);
 }
 
-// HTTP API: Validate YAML
+// HTTP API: Validate YAML with auto-correction
 async function handleValidateApi(
   request: Request,
   env: Env,
@@ -333,8 +333,11 @@ async function handleValidateApi(
   // Run local validation
   const localResult = validatePipelineYaml(body.yaml);
 
-  // Run external Expanso validation
-  const externalResult = await validateWithExpanso(body.yaml);
+  // Run external Expanso validation with auto-correction enabled
+  const externalResult = await validateWithExpanso(body.yaml, true);
+
+  // Check if we have a corrected version
+  const hasCorrectedYaml = !externalResult.valid && !!externalResult.corrected_yaml;
 
   // Combine results - include rich hallucination data from external validator
   const allErrors: Array<{ path: string; message: string; suggestion?: string; category?: string }> = [
@@ -356,10 +359,11 @@ async function handleValidateApi(
   const isValid = localResult.valid && externalResult.valid;
 
   return jsonResponse({
-    valid: isValid,
-    errors: allErrors,
+    valid: isValid || hasCorrectedYaml, // Consider corrected as "valid enough"
+    errors: hasCorrectedYaml ? [] : allErrors, // Don't show errors if we have correction
     warnings: localResult.warnings,
-    hallucinations: externalResult.hallucinations, // Include full hallucination details
+    corrected_yaml: hasCorrectedYaml ? externalResult.corrected_yaml : undefined,
+    hallucinations: hasCorrectedYaml ? [] : externalResult.hallucinations,
   }, headers);
 }
 

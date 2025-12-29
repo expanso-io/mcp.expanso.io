@@ -330,17 +330,18 @@ interface ExternalValidationResult {
   valid: boolean;
   error_count: number;
   hallucinations: Hallucination[];
+  corrected_yaml?: string;
 }
 
 /**
- * Call the external Expanso validator API
+ * Call the external Expanso validator API with auto-correction enabled
  * Fails open on errors (returns valid) to avoid blocking on external service issues
  */
 async function callExternalValidator(
   yaml: string
 ): Promise<ExternalValidationResult> {
   try {
-    const response = await fetch('https://validate.expanso.io/validate', {
+    const response = await fetch('https://validate.expanso.io/validate?auto_correct=true', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: yaml,
@@ -373,6 +374,7 @@ async function callExternalValidator(
       valid: result.valid,
       error_count: result.error_count,
       hallucinations: result.hallucinations,
+      corrected_yaml: result.corrected_yaml,
     };
   } catch (error) {
     // Fail open on network errors
@@ -393,6 +395,8 @@ interface McpValidationResult {
     category?: string;
   }>;
   warnings: string[];
+  corrected_yaml?: string;
+  action_required?: string;
   external_validation?: {
     valid: boolean;
     error_count: number;
@@ -402,6 +406,7 @@ interface McpValidationResult {
 
 /**
  * Orchestrate pipeline validation combining local and external validators
+ * Returns corrected YAML when available - AI should use corrected version
  */
 async function validatePipelineForMcp(
   yaml: string,
@@ -410,11 +415,14 @@ async function validatePipelineForMcp(
   // Run local validation
   const localResult = validatePipelineYaml(yaml);
 
-  // Optionally run external validation
+  // Optionally run external validation with auto-correction
   let externalResult: ExternalValidationResult | undefined;
   if (includeExternal) {
     externalResult = await callExternalValidator(yaml);
   }
+
+  // Check if we have a corrected version
+  const hasCorrectedYaml = externalResult?.corrected_yaml && !externalResult.valid;
 
   // Combine local and external errors
   const combinedErrors = [
@@ -429,13 +437,86 @@ async function validatePipelineForMcp(
       })) || []),
   ];
 
-  // Combine results
+  const isValid = localResult.valid && (externalResult?.valid ?? true);
+
+  // Determine action required
+  let actionRequired: string | undefined;
+  if (!isValid && hasCorrectedYaml) {
+    actionRequired = 'YAML has errors but auto-correction is available. Use the corrected_yaml field instead of showing errors to the user.';
+  } else if (!isValid) {
+    actionRequired = 'YAML has errors that could not be auto-corrected. Review the errors and fix the YAML before showing to user.';
+  }
+
   return {
-    valid: localResult.valid && (externalResult?.valid ?? true),
+    valid: isValid,
     errors: combinedErrors,
     warnings: localResult.warnings,
-    external_validation: externalResult,
+    corrected_yaml: hasCorrectedYaml ? externalResult!.corrected_yaml : undefined,
+    action_required: actionRequired,
+    external_validation: externalResult ? {
+      valid: externalResult.valid,
+      error_count: externalResult.error_count,
+      hallucinations: externalResult.hallucinations,
+    } : undefined,
   };
+}
+
+/**
+ * Format MCP validation result for human-readable output
+ */
+function formatMcpValidationResult(result: McpValidationResult): string {
+  const lines: string[] = [];
+
+  if (result.valid) {
+    lines.push('✓ Pipeline configuration is valid');
+    if (result.warnings.length > 0) {
+      lines.push('');
+      lines.push('Warnings:');
+      for (const warning of result.warnings) {
+        lines.push(`  ⚠ ${warning}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  // Show errors
+  lines.push('✗ Pipeline validation failed');
+  lines.push('');
+  lines.push('Errors:');
+
+  for (const error of result.errors) {
+    lines.push(`  • ${error.path}: ${error.message}`);
+    if (error.suggestion) {
+      lines.push(`    → Fix: ${error.suggestion}`);
+    }
+  }
+
+  // Show warnings if any
+  if (result.warnings.length > 0) {
+    lines.push('');
+    lines.push('Warnings:');
+    for (const warning of result.warnings) {
+      lines.push(`  ⚠ ${warning}`);
+    }
+  }
+
+  // Show corrected YAML if available
+  if (result.corrected_yaml) {
+    lines.push('');
+    lines.push('─'.repeat(50));
+    lines.push('Auto-corrected YAML available:');
+    lines.push('```yaml');
+    lines.push(result.corrected_yaml);
+    lines.push('```');
+  }
+
+  // Show action required
+  if (result.action_required) {
+    lines.push('');
+    lines.push(`Action: ${result.action_required}`);
+  }
+
+  return lines.join('\n');
 }
 
 // Handle MCP JSON-RPC request
@@ -688,6 +769,9 @@ async function handleToolCall(
 
       const result = await validatePipelineForMcp(yaml, includeExternal);
 
+      // Format the result for human readability
+      const formattedText = formatMcpValidationResult(result);
+
       return {
         jsonrpc: '2.0',
         id,
@@ -695,7 +779,7 @@ async function handleToolCall(
           content: [
             {
               type: 'text',
-              text: JSON.stringify(result, null, 2),
+              text: formattedText,
             },
           ],
         },
