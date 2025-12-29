@@ -70,6 +70,7 @@ export function getChatHtml(): string {
       flex-direction: column;
       border-right: 1px solid var(--border);
       min-width: 400px;
+      overflow: hidden;
     }
     .code-panel {
       flex: 1;
@@ -77,6 +78,11 @@ export function getChatHtml(): string {
       flex-direction: column;
       background: #1e1e2e;
       min-width: 400px;
+      overflow-y: auto;
+      position: sticky;
+      top: 0;
+      align-self: flex-start;
+      max-height: 100%;
     }
     .code-panel-header {
       padding: 0.75rem 1rem;
