@@ -1770,6 +1770,716 @@ output:
   stdout: {}`,
     bloblangPatterns: ['parse_json()', 'now()'],
   },
+
+  // ============================================================================
+  // BLOBLANG TRANSFORMATIONS (from UMH 19 Examples)
+  // ============================================================================
+  {
+    id: 'base64-decode',
+    name: 'Base64 Decoding',
+    description: 'Decode base64-encoded values in messages',
+    keywords: ['base64', 'decode', 'encode', 'binary', 'transform'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [encoded-data]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.decoded_value = this.encoded_value.decode("base64")
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: decoded-data`,
+    bloblangPatterns: ['decode("base64")'],
+  },
+
+  {
+    id: 'string-cleaning',
+    name: 'String Cleaning and Sanitization',
+    description: 'Remove specific characters from strings using replace_all',
+    keywords: ['string', 'clean', 'sanitize', 'replace', 'remove', 'characters'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [raw-strings]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.cleaned_string = this.raw_string.replace_all("-", "").replace_all("_", "")
+        root.topic_clean = this.topic.replace_all(".", "_")
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: cleaned-data`,
+    bloblangPatterns: ['replace_all()'],
+  },
+
+  {
+    id: 'endianness-swap',
+    name: 'Hex Endianness Swap',
+    description: 'Handle byte order conversion for Modbus or binary data',
+    keywords: ['endian', 'endianness', 'hex', 'binary', 'modbus', 'byte', 'swap', 'reverse'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [modbus-data]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.correct_endian = this.hex_value.decode("hex").reverse().encode("hex")
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: corrected-data`,
+    bloblangPatterns: ['decode("hex")', 'reverse()', 'encode("hex")'],
+  },
+
+  {
+    id: 'json-to-xml',
+    name: 'JSON to XML Conversion',
+    description: 'Convert JSON objects to XML format',
+    keywords: ['json', 'xml', 'convert', 'format', 'transform'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [json-data]
+
+pipeline:
+  processors:
+    - mapping: |
+        root.xml_data = this.json_data.format_xml()
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: xml-data`,
+    bloblangPatterns: ['format_xml()'],
+  },
+
+  {
+    id: 'conditional-error-detection',
+    name: 'Conditional Error Detection',
+    description: 'Detect errors using conditional logic (bit relations)',
+    keywords: ['conditional', 'error', 'detect', 'boolean', 'logic', 'state'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [machine-state]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.Error = this.State == "run" && this.speed == 0
+        root.is_idle = this.State == "idle" || this.speed < 10
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: state-analysis`,
+    bloblangPatterns: ['== comparison', '&& and', '|| or'],
+  },
+
+  {
+    id: 'numeric-calculations',
+    name: 'Numeric Calculations',
+    description: 'Perform mathematical operations on message values',
+    keywords: ['math', 'calculate', 'multiply', 'divide', 'number', 'arithmetic'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [sensor-data]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.result = this.value.number() * 10
+        root.celsius = (this.fahrenheit.number() - 32) * 5 / 9
+        root.percentage = (this.current / this.max) * 100
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: calculated-data`,
+    bloblangPatterns: ['number()', 'arithmetic operators'],
+  },
+
+  {
+    id: 'random-number-generation',
+    name: 'Random Number Generation',
+    description: 'Generate random numbers for testing or validation',
+    keywords: ['random', 'number', 'generate', 'test', 'validation'],
+    components: {
+      inputs: ['generate'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  generate:
+    count: 100
+    interval: 100ms
+    mapping: |
+      root = {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root.random_number = random_int(max: 100)
+        root.random_float = random_int(max: 10000) / 100
+        root.timestamp_ms = (timestamp_unix_nano() / 1000000).floor()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['random_int()', 'timestamp_unix_nano()', 'floor()'],
+  },
+
+  {
+    id: 'datetime-conversion',
+    name: 'DateTime Conversion (UTC to Local)',
+    description: 'Convert timestamps between UTC and local time formats',
+    keywords: ['datetime', 'timestamp', 'utc', 'local', 'timezone', 'convert', 'format'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [events]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.local_time = this.utc_time.ts_parse("2006-01-02T15:04:05Z").ts_format("2006-01-02 15:04:05", "Local")
+        root.formatted = this.timestamp.ts_parse("RFC3339").ts_format("Jan 02, 2006 3:04 PM")
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: formatted-events`,
+    bloblangPatterns: ['ts_parse()', 'ts_format()'],
+  },
+
+  {
+    id: 'sql-enrichment',
+    name: 'Database Enrichment (SQL)',
+    description: 'Enrich messages by fetching data from SQL database',
+    keywords: ['sql', 'database', 'postgres', 'mysql', 'enrich', 'lookup', 'join'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['branch', 'sql_select', 'mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [raw-events]
+
+pipeline:
+  processors:
+    - branch:
+        processors:
+          - sql_select:
+              driver: postgres
+              dsn: postgres://user:pass@localhost:5432/mydb
+              table: asset_data
+              where: asset_id = ?
+              args_mapping: root = [this.asset_id]
+              columns:
+                - latest_value
+                - asset_name
+        result_map: |
+          root.enrichment = this
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: enriched-events`,
+    bloblangPatterns: ['branch', 'sql_select', 'result_map'],
+  },
+
+  {
+    id: 'match-routing',
+    name: 'Match Expression Routing',
+    description: 'Route messages using match expressions (Modbus example)',
+    keywords: ['match', 'route', 'routing', 'conditional', 'modbus', 'switch'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [modbus-data]
+
+pipeline:
+  processors:
+    - mapping: |
+        let workcell = match {
+          meta("modbus_slave_id") == "10" => "Rack_ID_10",
+          meta("modbus_slave_id") == "20" => "Rack_ID_20",
+          meta("modbus_slave_id") == "30" => "Rack_ID_30",
+          _ => "Unknown_Rack"
+        }
+        root = this
+        root.workcell = $workcell
+        root.tagname = meta("modbus_tag_name")
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: routed-data`,
+    bloblangPatterns: ['match expression', 'meta()', 'let variable'],
+  },
+
+  {
+    id: 'tcp-network-device',
+    name: 'TCP Network Device Communication',
+    description: 'Communicate with network devices (scales, sensors) via TCP',
+    keywords: ['tcp', 'network', 'device', 'scale', 'sensor', 'netcat', 'command'],
+    components: {
+      inputs: ['generate'],
+      processors: ['command', 'mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  generate:
+    interval: 1s
+    mapping: |
+      root = "SI\\r\\n"
+
+pipeline:
+  processors:
+    - command:
+        name: nc
+        args_mapping: '["10.117.216.80", "8000"]'
+    - mapping: |
+        if content().string().starts_with("SS") {
+          let weight = content()
+            .replace_all(" ", "")
+            .trim_prefix("SS")
+            .trim_suffix("g\\r\\n")
+            .number()
+          let unit = content().string().re_replace_all("[^a-zA-Z]", "")
+          root = {
+            "value": $weight,
+            "timestamp_ms": (timestamp_unix_nano() / 1000000).floor(),
+            "unit": $unit
+          }
+        } else {
+          root = deleted()
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: scale-readings`,
+    bloblangPatterns: ['content()', 'starts_with()', 'trim_prefix()', 'trim_suffix()', 're_replace_all()'],
+  },
+
+  {
+    id: 'kafka-cache-aggregation',
+    name: 'Kafka Cache Aggregation',
+    description: 'Aggregate messages from multiple topics using cache',
+    keywords: ['cache', 'aggregate', 'kafka', 'combine', 'multiple', 'topics'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['branch', 'cache', 'mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics:
+      - classification.topic1
+      - classification.topic2
+    consumer_group: aggregator
+
+pipeline:
+  processors:
+    - branch:
+        processors:
+          - cache:
+              resource: memorycache
+              operator: set
+              key: \${! meta("kafka_topic") }
+              value: \${! json("classification") }
+    - branch:
+        processors:
+          - cache:
+              resource: memorycache
+              operator: get
+              key: classification.topic1
+        result_map: root.class_1 = content().string()
+    - branch:
+        processors:
+          - cache:
+              resource: memorycache
+              operator: get
+              key: classification.topic2
+        result_map: root.class_2 = content().string()
+    - mapping: |
+        root.final = match {
+          this.class_1 == "off" || this.class_2 == "off" => "Machine-off",
+          this.class_1 == "on" && this.class_2 == "good" => "good",
+          _ => "Unknown"
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: aggregated-result
+
+cache_resources:
+  - label: memorycache
+    memory:
+      default_ttl: 5m`,
+    bloblangPatterns: ['cache processor', 'match expression'],
+  },
+
+  {
+    id: 'latency-measurement',
+    name: 'Message Latency Measurement',
+    description: 'Measure processing latency between timestamps',
+    keywords: ['latency', 'timing', 'performance', 'measurement', 'timestamp'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [events]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = if !this.exists("timestamp_ms") { deleted() }
+    - mapping: |
+        let current_timestamp = (timestamp_unix_nano() / 1000000).floor()
+        let original_timestamp = this.timestamp_ms.number()
+        let latency = $current_timestamp - $original_timestamp
+        let process_value_name = meta("kafka_topic").replace_all(".", "_")
+        root = {
+          "timestamp_ms": $current_timestamp,
+          $process_value_name: $latency
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: latency-metrics`,
+    bloblangPatterns: ['timestamp_unix_nano()', 'exists()', 'dynamic field names'],
+  },
+
+  {
+    id: 'http-camera-capture',
+    name: 'HTTP Camera Image Capture',
+    description: 'Capture images from network camera and encode to base64',
+    keywords: ['http', 'camera', 'image', 'capture', 'base64', 'thermal'],
+    components: {
+      inputs: ['http_client'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  http_client:
+    url: http://camera-ip-address/snapshot.jpg
+    verb: GET
+    rate_limit: webcam_frequency
+    timeout: 5s
+    retries: 3
+
+pipeline:
+  processors:
+    - mapping: |
+        let image_base64 = content().encode("base64").string()
+        let timestamp = (timestamp_unix_nano() / 1000000).floor()
+        root = {
+          "timestamp_ms": $timestamp,
+          "image_base64": $image_base64
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: camera-images
+
+rate_limit_resources:
+  - label: webcam_frequency
+    local:
+      count: 1
+      interval: 1s`,
+    bloblangPatterns: ['content()', 'encode("base64")', 'rate_limit_resources'],
+  },
+
+  {
+    id: 'archive-squash',
+    name: 'Archive and Squash Messages',
+    description: 'Combine multiple messages into a single JSON payload',
+    keywords: ['archive', 'squash', 'combine', 'merge', 'aggregate', 'opc-ua'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping', 'archive'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [opc-ua-tags]
+
+pipeline:
+  processors:
+    - mapping: |
+        let field_name = match {
+          meta("opcua_node_id") == "ns=4;i=3" => "machineNumber",
+          meta("opcua_node_id") == "ns=4;i=4" => "dataSetNumber",
+          _ => meta("opcua_tag_name")
+        }
+        root = {
+          $field_name: this.value
+        }
+    - archive:
+        format: json_array
+    - mapping: |
+        root = this
+          .append({"timestamp_ms": (timestamp_unix_nano() / 1000000).floor()})
+          .squash()
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: combined-opc-ua`,
+    bloblangPatterns: ['archive format: json_array', 'append()', 'squash()'],
+  },
+
+  {
+    id: 'array-average',
+    name: 'Array Average Calculation',
+    description: 'Calculate average of numerical values in an array',
+    keywords: ['array', 'average', 'sum', 'length', 'calculate', 'aggregate'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [measurements]
+
+pipeline:
+  processors:
+    - mapping: |
+        let values = this.measurements
+        let total = $values.sum()
+        let count = $values.length()
+        let average = $total / $count
+        root = {
+          "timestamp_ms": (timestamp_unix_nano() / 1000000).floor(),
+          "average_measurement": $average,
+          "min": $values.min(),
+          "max": $values.max()
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: statistics`,
+    bloblangPatterns: ['sum()', 'length()', 'min()', 'max()'],
+  },
+
+  {
+    id: 'bitmask-logic',
+    name: 'Bitmask Status Decoding',
+    description: 'Decode status bits from integer values',
+    keywords: ['bitmask', 'bit', 'status', 'decode', 'binary', 'flag'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [machine-status]
+
+pipeline:
+  processors:
+    - mapping: |
+        let status_code = this.status.number().round().int64()
+        root = {
+          "status_code": status_code,
+          "machine_running": ($status_code % 2) == 1,
+          "error_detected": (($status_code / 2) % 2) == 1,
+          "maintenance_required": (($status_code / 4) % 2) == 1,
+          "timestamp_ms": (timestamp_unix_nano() / 1000000).floor()
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: decoded-status`,
+    bloblangPatterns: ['int64()', 'modulo %', 'integer division'],
+  },
+
+  {
+    id: 'state-machine-mapping',
+    name: 'State Machine Mapping (Weihenstephaner)',
+    description: 'Map machine states to standardized state codes',
+    keywords: ['state', 'machine', 'weihenstephaner', 'packml', 'mapping', 'oee'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [machine-state]
+
+pipeline:
+  processors:
+    - mapping: |
+        if this.exists("machine_state_code") {
+          root = {
+            "start_time_unix_ms": this.timestamp_ms,
+            "state": match this.machine_state_code {
+              0 => 30000,
+              1 => 40000,
+              2 => 20000,
+              4 => 40000,
+              8 => 60000,
+              16 => 70000,
+              32 => 80000,
+              64 => 80000,
+              128 => 10000,
+              _ => 0
+            }
+          }
+        } else {
+          root = deleted()
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: standardized-state`,
+    bloblangPatterns: ['match expression', 'exists()', 'deleted()'],
+  },
+
+  {
+    id: 'mqtt-bridge',
+    name: 'MQTT Broker Bridge',
+    description: 'Bridge external MQTT broker to internal system',
+    keywords: ['mqtt', 'bridge', 'import', 'broker', 'external'],
+    components: {
+      inputs: ['mqtt'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  mqtt:
+    urls:
+      - tcp://external-broker:1883
+    topics:
+      - external/#
+    client_id: mqtt-bridge
+
+pipeline:
+  processors:
+    - mapping: |
+        let mqtt_topic = meta("mqtt_topic").replace_all("/", ".")
+        let payload = this.catch(deleted())
+        root = if payload != null { payload } else { deleted() }
+        root.source_topic = $mqtt_topic
+        root.imported_at = now()
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: imported-mqtt`,
+    bloblangPatterns: ['meta("mqtt_topic")', 'catch()', 'null check'],
+  },
+
+  {
+    id: 'mqtt-ssl-tls',
+    name: 'MQTT with SSL/TLS',
+    description: 'Connect to MQTT broker with SSL/TLS and self-signed certificates',
+    keywords: ['mqtt', 'ssl', 'tls', 'certificate', 'secure', 'encrypted'],
+    components: {
+      inputs: ['mqtt'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  mqtt:
+    urls:
+      - ssl://secure-broker:8883
+    topics:
+      - secure-topic/#
+    client_id: ssl-client
+    tls:
+      enabled: true
+      skip_cert_verify: true
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.received_at = now()
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: secure-data`,
+    bloblangPatterns: ['tls configuration', 'parse_json()', 'now()'],
+  },
 ];
 
 /**
