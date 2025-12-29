@@ -561,12 +561,20 @@ BLOBLANG SYNTAX (inside mapping:):
 - Variables: let x = value - NOT var or const
 - Arrays: this.map_each(x -> x.field) - NOT .map(x => ...)
 
+COMMON COMPONENTS:
+- Data generation: use "generate:" input (NOT "null:" or "random:")
+  generate: { count: 10, interval: 1s, mapping: "root = {}" }
+- Print to console: use "stdout: {}" (no extra fields needed)
+  stdout: {} - NEVER use "stdout: format:" or "stdout: output:"
+
 NEVER USE THESE PATTERNS:
 - Multiple "---" separated documents (wrong) - ONE document only
 - "components:" (wrong) - use "input:", "pipeline:", "output:"
 - "pipeline: with:" (wrong) - use "pipeline: processors:"
 - "from_json()" (wrong) - use .parse_json() method
 - "if x then y else z" (wrong) - use if x { y } else { z }
+- "input: null:" (wrong) - use "input: generate:"
+- "stdout: format:" (wrong) - use just "stdout: {}"
 
 Context:
 ${context || 'No relevant documentation found for this query.'}`;

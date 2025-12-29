@@ -1680,6 +1680,96 @@ output:
     retries: 3`,
     bloblangPatterns: ['parse_json()'],
   },
+
+  // ============================================================================
+  // DATA GENERATION & TESTING
+  // ============================================================================
+  {
+    id: 'generate-uuid-stdout',
+    name: 'Generate UUIDs to Stdout',
+    description: 'Generate random UUIDs and print to standard output',
+    keywords: ['generate', 'uuid', 'stdout', 'random', 'test', 'debug', 'print', 'console'],
+    components: {
+      inputs: ['generate'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  generate:
+    count: 10
+    interval: 1s
+    mapping: |
+      root = {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root.uuid = uuid_v4()
+        root.timestamp = now()
+    - mapping: |
+        root.formatted = root.timestamp.format_timestamp("2006-01-02T15:04:05Z07:00")
+        root.unix = root.timestamp.ts_unix()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['uuid_v4()', 'now()', 'format_timestamp()', 'ts_unix()'],
+  },
+
+  {
+    id: 'generate-random-data',
+    name: 'Generate Random Test Data',
+    description: 'Generate random test data with multiple transformations',
+    keywords: ['generate', 'random', 'test', 'data', 'stdout', 'transform', 'hash'],
+    components: {
+      inputs: ['generate'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  generate:
+    count: 0
+    interval: 500ms
+    mapping: |
+      root.id = uuid_v4()
+
+pipeline:
+  processors:
+    - mapping: |
+        root.id = this.id
+        root.created_at = now()
+        root.random_number = random_int(max: 1000)
+    - mapping: |
+        root.hash = root.id.hash("sha256").encode("hex").slice(0, 16)
+        root.is_even = root.random_number % 2 == 0
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['uuid_v4()', 'now()', 'random_int()', 'hash()', 'encode()', 'slice()'],
+  },
+
+  {
+    id: 'stdin-transform-stdout',
+    name: 'Stdin to Stdout Transform',
+    description: 'Read from stdin, transform, and write to stdout',
+    keywords: ['stdin', 'stdout', 'transform', 'cli', 'pipe', 'test'],
+    components: {
+      inputs: ['stdin'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
 ];
 
 /**
@@ -1779,7 +1869,7 @@ ${ex.bloblangPatterns && ex.bloblangPatterns.length > 0 ? `\n**Bloblang patterns
 
   return `## Validated Pipeline Examples
 
-The following examples are production-validated. ADAPT these examples for the user's needs - do NOT generate YAML from scratch.
+The following examples show correct syntax. Use these as REFERENCE when generating pipelines.
 
 ${sections.join('\n---\n')}`;
 }
