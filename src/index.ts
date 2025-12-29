@@ -97,6 +97,123 @@ async function validateWithExpanso(yaml: string, autoCorrect = false): Promise<E
   }
 }
 
+// Format validation errors for LLM to fix
+function formatErrorsForFix(hallucinations: Hallucination[]): string {
+  if (hallucinations.length === 0) return '';
+
+  return hallucinations
+    .filter(h => h.severity === 'ERROR')
+    .map(h => {
+      const correction = h.correction ? ` → Use: ${h.correction}` : '';
+      return `- ${h.path}: ${h.message}${correction}`;
+    })
+    .join('\n');
+}
+
+// Ask LLM to fix invalid YAML based on validation errors
+async function fixYamlWithLLM(
+  env: Env,
+  invalidYaml: string,
+  errors: string,
+  userRequest: string
+): Promise<string | null> {
+  const fixPrompt = `The following YAML pipeline has validation errors. Fix ONLY the errors listed below.
+Do not change anything else. Return ONLY the corrected YAML in a code block.
+
+USER REQUEST: ${userRequest}
+
+INVALID YAML:
+\`\`\`yaml
+${invalidYaml}
+\`\`\`
+
+ERRORS TO FIX:
+${errors}
+
+COMMON FIXES:
+- "null:" input → use "generate:" instead
+- "stdout: format:" → use just "stdout: {}" (no extra fields)
+- "topic:" on kafka → use "topics:" (plural, array)
+- "from_json()" → use ".parse_json()" method
+- Unknown component → check spelling or use closest valid component
+
+Return ONLY the fixed YAML in a code block, nothing else:`;
+
+  try {
+    const response = await (env.AI.run as Function)('@cf/meta/llama-3.1-8b-instruct-fast', {
+      messages: [
+        { role: 'user', content: fixPrompt }
+      ],
+      max_tokens: 512,
+    });
+
+    const responseText = (response as { response: string }).response;
+    const yamlMatch = responseText.match(/```(?:yaml|yml)?\n([\s\S]*?)```/);
+    return yamlMatch ? yamlMatch[1].trim() : null;
+  } catch (error) {
+    console.error('LLM fix error:', error);
+    return null;
+  }
+}
+
+// Iteratively validate and fix YAML until valid or max retries
+async function validateAndFixYaml(
+  env: Env,
+  yaml: string,
+  userRequest: string,
+  maxRetries: number = 2
+): Promise<{ yaml: string; valid: boolean; attempts: number; hallucinations: Hallucination[] }> {
+  let currentYaml = yaml;
+  let attempts = 0;
+
+  while (attempts < maxRetries) {
+    attempts++;
+
+    // Validate current YAML
+    const result = await validateWithExpanso(currentYaml, true);
+
+    // If valid, we're done
+    if (result.valid) {
+      return { yaml: currentYaml, valid: true, attempts, hallucinations: [] };
+    }
+
+    // If we have a valid correction from the validator, use it
+    if (result.corrected_yaml) {
+      // Verify the correction is actually valid
+      const correctionResult = await validateWithExpanso(result.corrected_yaml, false);
+      if (correctionResult.valid) {
+        return { yaml: result.corrected_yaml, valid: true, attempts, hallucinations: [] };
+      }
+      // Correction was bad, fall through to LLM fix
+    }
+
+    // No valid correction, ask LLM to fix
+    const errorText = formatErrorsForFix(result.hallucinations);
+    if (!errorText) {
+      // No actionable errors, return as-is
+      return { yaml: currentYaml, valid: false, attempts, hallucinations: result.hallucinations };
+    }
+
+    const fixedYaml = await fixYamlWithLLM(env, currentYaml, errorText, userRequest);
+    if (!fixedYaml) {
+      // LLM couldn't fix, return original
+      return { yaml: currentYaml, valid: false, attempts, hallucinations: result.hallucinations };
+    }
+
+    // Use fixed version for next iteration
+    currentYaml = fixedYaml;
+  }
+
+  // Max retries reached, do final validation
+  const finalResult = await validateWithExpanso(currentYaml, false);
+  return {
+    yaml: currentYaml,
+    valid: finalResult.valid,
+    attempts,
+    hallucinations: finalResult.hallucinations
+  };
+}
+
 export interface Env {
   AI: Ai;
   VECTORIZE?: VectorizeIndex; // Optional - requires vectorize:create permission
@@ -618,14 +735,14 @@ ${context || 'No relevant documentation found for this query.'}`;
   let finalYaml = yamlBlocks[0] || ''; // Track the final YAML for component links
 
   for (const yaml of yamlBlocks) {
-    // Run local validation first (fast)
-    const localResult = validatePipelineYaml(yaml);
-
-    // Run external Expanso validation with auto-correction enabled
-    const externalResult = await validateWithExpanso(yaml, true);
-
     // Generate unique ID for this YAML
     const yamlId = `yaml_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // ITERATIVE VALIDATION: Try to fix YAML until valid (max 2 retries)
+    const fixResult = await validateAndFixYaml(env, yaml, body.message, 2);
+
+    // Run local validation on final result
+    const localResult = validatePipelineYaml(fixResult.yaml);
 
     // Categorize local errors (for analytics only)
     const structureErrors = localResult.errors
@@ -639,51 +756,52 @@ ${context || 'No relevant documentation found for this query.'}`;
                    !bloblangErrors.includes(`${e.path}: ${e.message}`))
       .map(e => `${e.path}: ${e.message}`);
 
-    // Check if we have a corrected version to use
-    const correctedYaml = externalResult.corrected_yaml;
-    const wasCorrected = !externalResult.valid && !!correctedYaml;
+    // Check if YAML was modified during fix process
+    const wasCorrected = fixResult.yaml !== yaml;
 
-    // Silently replace YAML with corrected version if available
-    if (wasCorrected && correctedYaml) {
-      responseText = replaceYamlInResponse(responseText, yaml, correctedYaml);
-      finalYaml = correctedYaml;
+    // Replace YAML in response with fixed version
+    if (wasCorrected) {
+      responseText = replaceYamlInResponse(responseText, yaml, fixResult.yaml);
+      finalYaml = fixResult.yaml;
     } else if (yaml === yamlBlocks[0]) {
       finalYaml = yaml;
     }
 
-    // Combined validity: both must pass (or was successfully corrected)
-    const isValid = (localResult.valid && externalResult.valid) || wasCorrected;
+    // Combined validity
+    const isValid = fixResult.valid && localResult.valid;
 
     // Store full YAML in KV (non-blocking) - include correction info
     if (env.CONTENT_CACHE) {
       env.CONTENT_CACHE.put(yamlId, JSON.stringify({
-        yaml: wasCorrected ? correctedYaml : yaml,
+        yaml: fixResult.yaml,
         originalYaml: wasCorrected ? yaml : undefined,
         userMessage: body.message,
         timestamp: new Date().toISOString(),
         localValid: localResult.valid,
-        externalValid: externalResult.valid,
+        externalValid: fixResult.valid,
         wasAutoCorrected: wasCorrected,
+        fixAttempts: fixResult.attempts,
         structureErrors,
         bloblangErrors,
         componentErrors,
-        hallucinations: externalResult.hallucinations,
+        hallucinations: fixResult.hallucinations,
       }), { expirationTtl: 60 * 60 * 24 * 90 }) // Keep for 90 days
         .catch(() => {});
     }
 
     // Track to PostHog with categorized errors (non-blocking) - track corrections
-    const externalErrors = hallucinationsToErrors(externalResult.hallucinations);
+    const externalErrors = hallucinationsToErrors(fixResult.hallucinations);
     trackYamlGenerated(
       env.POSTHOG_API_KEY,
       distinctId,
-      wasCorrected ? correctedYaml! : yaml,
+      fixResult.yaml,
       body.message,
       {
         valid: isValid,
-        errors: wasCorrected ? [] : [...localResult.errors.map(e => `${e.path}: ${e.message}`), ...externalErrors],
+        errors: isValid ? [] : [...localResult.errors.map(e => `${e.path}: ${e.message}`), ...externalErrors],
         warnings: localResult.warnings,
         autoCorrected: wasCorrected,
+        fixAttempts: fixResult.attempts,
       },
       yamlId
     ).catch(() => {});

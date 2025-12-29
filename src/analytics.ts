@@ -152,7 +152,7 @@ export async function trackYamlGenerated(
   distinctId: string,
   yaml: string,
   userMessage: string,
-  validationResult: { valid: boolean; errors: string[]; warnings: string[]; autoCorrected?: boolean },
+  validationResult: { valid: boolean; errors: string[]; warnings: string[]; autoCorrected?: boolean; fixAttempts?: number },
   yamlId: string
 ): Promise<void> {
   await trackEvent(apiKey, {
@@ -168,6 +168,7 @@ export async function trackYamlGenerated(
       validator_error_count: validationResult.errors.length,
       validator_warnings: validationResult.warnings,
       was_auto_corrected: validationResult.autoCorrected ?? false,
+      fix_attempts: validationResult.fixAttempts ?? 1,
     },
   });
 }
