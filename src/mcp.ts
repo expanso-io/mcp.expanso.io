@@ -31,6 +31,7 @@ import {
 } from './bloblang-reference';
 import { suggestWithFallback } from './pattern-suggester';
 import { explainError } from './error-explainer';
+import { generateTestData } from './test-data-generator';
 
 // MCP Protocol types
 interface McpRequest {
@@ -276,6 +277,37 @@ const TOOLS = [
           enum: ['summary', 'detailed'],
           description: 'Output format: summary (names only) or detailed (with descriptions)',
           default: 'detailed',
+        },
+      },
+    },
+  },
+  {
+    name: 'generate_test_data',
+    description:
+      'Generate sample input data for testing a pipeline. Supports schema-based, example-based, or pipeline-analysis generation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        schema: {
+          type: 'object',
+          description:
+            'JSON schema with type specifications (uuid, name, email, timestamp, number, number:min:max, boolean, string) or an example object to infer types from',
+        },
+        pipeline_yaml: {
+          type: 'string',
+          description:
+            'Pipeline YAML to analyze and infer input format from field references',
+        },
+        count: {
+          type: 'number',
+          description: 'Number of records to generate (default: 5, max: 100)',
+          default: 5,
+        },
+        format: {
+          type: 'string',
+          enum: ['json', 'jsonl', 'csv', 'yaml'],
+          description: 'Output format for the generated data',
+          default: 'jsonl',
         },
       },
     },
@@ -911,6 +943,33 @@ async function handleToolCall(
             {
               type: 'text',
               text: formatComponentList(result),
+            },
+          ],
+        },
+      };
+    }
+
+    case 'generate_test_data': {
+      const schema = args?.schema as Record<string, unknown> | undefined;
+      const pipeline_yaml = args?.pipeline_yaml as string | undefined;
+      const count = args?.count as number | undefined;
+      const format = args?.format as 'json' | 'jsonl' | 'csv' | 'yaml' | undefined;
+
+      const result = generateTestData({
+        schema,
+        pipeline_yaml,
+        count,
+        format,
+      });
+
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
             },
           ],
         },

@@ -89,17 +89,33 @@ input:
       expect(result.errors.some(e => e.message.includes('output'))).toBe(true);
     });
 
-    it('should detect unknown input type with suggestion', () => {
+    it('should auto-fix known component typos like "kafaka" → "kafka"', () => {
       const yaml = `
 input:
   kafaka:
+    addresses: [localhost:9092]
+    topics: [test]
+output:
+  stdout: {}
+`;
+      const result = validatePipelineYaml(yaml);
+      // Should be valid after auto-fix
+      expect(result.valid).toBe(true);
+      expect(result.fixed_yaml).toContain('kafka:');
+      expect(result.fixes_applied).toContain('Component: "kafaka" → "kafka"');
+    });
+
+    it('should detect truly unknown input type with suggestion', () => {
+      const yaml = `
+input:
+  unknowncomponent:
     addresses: [localhost:9092]
 output:
   stdout: {}
 `;
       const result = validatePipelineYaml(yaml);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.suggestion?.includes('kafka'))).toBe(true);
+      expect(result.errors.some(e => e.message.includes('Unknown'))).toBe(true);
     });
 
     it('should detect K8s manifest structure', () => {

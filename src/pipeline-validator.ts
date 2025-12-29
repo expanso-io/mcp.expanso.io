@@ -6,6 +6,7 @@
  */
 
 import { getComponentSchema, type ComponentSchema, type FieldSchema } from './component-schemas';
+import { checkPipelineCompatibility, type CompatibilityWarning } from './compatibility-rules';
 
 // ============================================================================
 // Component Registry - All valid Expanso/Benthos components
@@ -345,6 +346,226 @@ export const BLOBLANG_MISSPELLINGS: Record<string, string> = {
 };
 
 // ============================================================================
+// Auto-Fix Registries - HIGH Confidence Fixes
+// ============================================================================
+
+/**
+ * Component name typos that can be auto-fixed with HIGH confidence
+ * These are unambiguous misspellings with a single correct replacement
+ */
+export const COMPONENT_TYPOS: Record<string, string> = {
+  // Kafka typos
+  'kafaka': 'kafka',
+  'kafk': 'kafka',
+  'kafkka': 'kafka',
+
+  // AWS S3 shortcuts
+  's3': 'aws_s3',
+  'amazon_s3': 'aws_s3',
+
+  // Elasticsearch
+  'elastic': 'elasticsearch_v8',
+  'elasticsearch': 'elasticsearch_v8',
+  'elastic_search': 'elasticsearch_v8',
+
+  // Bloblang/mapping
+  'blobl': 'bloblang',
+  'blobang': 'bloblang',
+  'blob': 'bloblang',
+  'map': 'mapping',
+
+  // GCS
+  'gcs': 'gcp_cloud_storage',
+  'google_cloud_storage': 'gcp_cloud_storage',
+
+  // Azure
+  'azure_blob': 'azure_blob_storage',
+
+  // MongoDB
+  'mongo': 'mongodb',
+  'mongdb': 'mongodb',
+
+  // NATS
+  'nat': 'nats',
+
+  // Redis
+  'redis_stream': 'redis_streams',
+};
+
+/**
+ * Bloblang method name typos that can be auto-fixed with HIGH confidence
+ * Focuses on camelCase -> snake_case transformations
+ */
+export const BLOBLANG_METHOD_TYPOS: Record<string, string> = {
+  // JSON parsing - most common AI mistakes
+  'parseJson': 'parse_json',
+  'parsejson': 'parse_json',
+  'parseJSON': 'parse_json',
+  'parse_JSON': 'parse_json',
+
+  // JSON formatting
+  'formatJson': 'format_json',
+  'formatjson': 'format_json',
+  'formatJSON': 'format_json',
+
+  // Array iteration - very common AI mistake
+  'mapEach': 'map_each',
+  'mapeach': 'map_each',
+  'map_Each': 'map_each',
+  'forEach': 'map_each',
+  'foreach': 'map_each',
+
+  // YAML parsing
+  'parseYaml': 'parse_yaml',
+  'parseyaml': 'parse_yaml',
+  'formatYaml': 'format_yaml',
+  'formatyaml': 'format_yaml',
+
+  // XML
+  'parseXml': 'parse_xml',
+  'parsexml': 'parse_xml',
+  'parseXML': 'parse_xml',
+  'formatXml': 'format_xml',
+  'formatxml': 'format_xml',
+
+  // String methods
+  'toUpperCase': 'uppercase',
+  'toLowerCase': 'lowercase',
+  'replaceAll': 'replace_all',
+  'indexOf': 'index_of',
+  'startsWith': 'has_prefix',
+  'endsWith': 'has_suffix',
+
+  // Array methods
+  'sortBy': 'sort_by',
+  'findAll': 'find_all',
+  'findBy': 'find_by',
+  'findAllBy': 'find_all_by',
+  'keyValues': 'key_values',
+  'jsonPath': 'json_path',
+
+  // Timestamp methods
+  'tsFormat': 'ts_format',
+  'tsParse': 'ts_parse',
+  'tsUnix': 'ts_unix',
+};
+
+/**
+ * Structure fixes that can be auto-applied with HIGH confidence
+ * Maps incorrect structure patterns to correct ones
+ */
+export const STRUCTURE_FIXES: Record<string, string> = {
+  'pipeline.with': 'pipeline.processors',
+  'pipeline.steps': 'pipeline.processors',
+  'pipeline.transforms': 'pipeline.processors',
+};
+
+// ============================================================================
+// Auto-Fix Functions
+// ============================================================================
+
+/**
+ * Result of applying auto-fixes to YAML
+ */
+interface AutoFixResult {
+  /** The fixed YAML string */
+  fixedYaml: string;
+  /** List of fixes that were applied */
+  fixesApplied: string[];
+  /** Suggested fixes for user review */
+  suggestedFixes: SuggestedFix[];
+}
+
+/**
+ * Apply HIGH confidence auto-fixes to YAML content
+ * Returns the fixed YAML and a list of applied fixes
+ */
+export function applyAutoFixes(yaml: string): AutoFixResult {
+  let fixedYaml = yaml;
+  const fixesApplied: string[] = [];
+  const suggestedFixes: SuggestedFix[] = [];
+
+  // 1. Fix component name typos (HIGH confidence)
+  for (const [typo, correct] of Object.entries(COMPONENT_TYPOS)) {
+    // Match component declarations like "input:\n  kafaka:" or "- kafaka:"
+    const componentPattern = new RegExp(
+      `(^\\s*|:\\s*\\n\\s*|- )${escapeRegex(typo)}(\\s*:)`,
+      'gm'
+    );
+    if (componentPattern.test(fixedYaml)) {
+      fixedYaml = fixedYaml.replace(componentPattern, `$1${correct}$2`);
+      fixesApplied.push(`Component: "${typo}" → "${correct}"`);
+    }
+  }
+
+  // 2. Fix Bloblang method name typos (HIGH confidence)
+  for (const [typo, correct] of Object.entries(BLOBLANG_METHOD_TYPOS)) {
+    // Match method calls like ".parseJson()" → ".parse_json()"
+    const methodPattern = new RegExp(`\\.${escapeRegex(typo)}\\s*\\(`, 'g');
+    if (methodPattern.test(fixedYaml)) {
+      fixedYaml = fixedYaml.replace(methodPattern, `.${correct}(`);
+      fixesApplied.push(`Bloblang method: ".${typo}()" → ".${correct}()"`);
+    }
+  }
+
+  // 3. Fix structure patterns (HIGH confidence)
+  for (const [incorrect, correct] of Object.entries(STRUCTURE_FIXES)) {
+    const parts = incorrect.split('.');
+    if (parts.length === 2) {
+      // Match patterns like "pipeline:\n  with:" → "pipeline:\n  processors:"
+      const structurePattern = new RegExp(
+        `(${escapeRegex(parts[0])}\\s*:\\s*\\n\\s*)${escapeRegex(parts[1])}(\\s*:)`,
+        'gm'
+      );
+      if (structurePattern.test(fixedYaml)) {
+        const correctPart = correct.split('.')[1];
+        fixedYaml = fixedYaml.replace(structurePattern, `$1${correctPart}$2`);
+        fixesApplied.push(`Structure: "${incorrect}" → "${correct}"`);
+      }
+    }
+  }
+
+  // 4. Add medium/low confidence suggestions (not auto-applied)
+  // Check for patterns that might need fixing but require user review
+
+  // Suggest fixing "http" to "http_client" or "http_server" (medium confidence)
+  const httpPattern = /^(\s*)http(\s*:)/gm;
+  if (httpPattern.test(yaml) && !fixedYaml.includes('http_client') &&
+      !fixedYaml.includes('http_server')) {
+    suggestedFixes.push({
+      original: 'http:',
+      replacement: 'http_client: or http_server:',
+      confidence: 'medium',
+      reason: 'Ambiguous: use http_client for outbound requests, http_server for webhooks',
+    });
+  }
+
+  // Suggest fixing generic "sql" to specific variant (medium confidence)
+  const sqlPattern = /^(\s*)sql(\s*:)/gm;
+  if (sqlPattern.test(yaml)) {
+    suggestedFixes.push({
+      original: 'sql:',
+      replacement: 'sql_select: or sql_insert: or sql_raw:',
+      confidence: 'medium',
+      reason: 'Use sql_select for queries, sql_insert for inserts, sql_raw for custom SQL',
+    });
+  }
+
+  return {
+    fixedYaml,
+    fixesApplied,
+    suggestedFixes,
+  };
+}
+
+/**
+ * Escape special regex characters in a string
+ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// ============================================================================
 // Validation Result Types
 // ============================================================================
 
@@ -354,10 +575,28 @@ export interface ValidationError {
   suggestion?: string;
 }
 
+/**
+ * Suggested fix for medium/low confidence corrections
+ */
+export interface SuggestedFix {
+  original: string;
+  replacement: string;
+  confidence: 'medium' | 'low';
+  reason: string;
+}
+
 export interface ValidationResult {
   valid: boolean;
   errors: ValidationError[];
   warnings: string[];
+  /** Auto-corrected YAML (only present if fixes were applied) */
+  fixed_yaml?: string;
+  /** List of fixes that were automatically applied */
+  fixes_applied?: string[];
+  /** Suggested fixes that require user review */
+  suggested_fixes?: SuggestedFix[];
+  /** Compatibility warnings for component combinations */
+  compatibility_warnings?: import('./compatibility-rules').CompatibilityWarning[];
 }
 
 // ============================================================================
@@ -488,10 +727,19 @@ export function validatePipeline(config: unknown): ValidationResult {
     validateBuffer(pipeline.buffer, errors);
   }
 
+  // Run compatibility checks (non-blocking)
+  let compatibilityWarnings: CompatibilityWarning[] = [];
+  try {
+    compatibilityWarnings = checkPipelineCompatibility(pipeline);
+  } catch {
+    // Compatibility checks are advisory - don't fail validation if they error
+  }
+
   return {
     valid: errors.length === 0,
     errors,
     warnings,
+    compatibility_warnings: compatibilityWarnings.length > 0 ? compatibilityWarnings : undefined,
   };
 }
 
@@ -1259,6 +1507,7 @@ function findSimilar(input: string, validTypes: Set<string>): string[] {
 
 /**
  * Parse YAML and validate as pipeline
+ * Applies HIGH confidence auto-fixes before validation
  */
 export function validatePipelineYaml(yamlString: string): ValidationResult {
   // Check for multiple YAML documents (--- separator) which is a common LLM mistake
@@ -1282,11 +1531,36 @@ export function validatePipelineYaml(yamlString: string): ValidationResult {
     }
   }
 
+  // Apply HIGH confidence auto-fixes before validation
+  const autoFixResult = applyAutoFixes(yamlString);
+  const yamlToValidate = autoFixResult.fixesApplied.length > 0
+    ? autoFixResult.fixedYaml
+    : yamlString;
+
   try {
-    const config = parseYaml(yamlString);
-    return validatePipeline(config);
+    const config = parseYaml(yamlToValidate);
+    const validationResult = validatePipeline(config);
+
+    // Include auto-fix information in the result
+    const result: ValidationResult = {
+      ...validationResult,
+    };
+
+    // Add fixed_yaml if fixes were applied
+    if (autoFixResult.fixesApplied.length > 0) {
+      result.fixed_yaml = autoFixResult.fixedYaml;
+      result.fixes_applied = autoFixResult.fixesApplied;
+    }
+
+    // Add suggested fixes if any
+    if (autoFixResult.suggestedFixes.length > 0) {
+      result.suggested_fixes = autoFixResult.suggestedFixes;
+    }
+
+    return result;
   } catch (error) {
-    return {
+    // If validation failed, still include any fixes that were attempted
+    const result: ValidationResult = {
       valid: false,
       errors: [{
         path: 'root',
@@ -1294,6 +1568,17 @@ export function validatePipelineYaml(yamlString: string): ValidationResult {
       }],
       warnings: [],
     };
+
+    if (autoFixResult.fixesApplied.length > 0) {
+      result.fixed_yaml = autoFixResult.fixedYaml;
+      result.fixes_applied = autoFixResult.fixesApplied;
+    }
+
+    if (autoFixResult.suggestedFixes.length > 0) {
+      result.suggested_fixes = autoFixResult.suggestedFixes;
+    }
+
+    return result;
   }
 }
 
