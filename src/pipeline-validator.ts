@@ -104,6 +104,245 @@ export const VALID_OUTPUTS = new Set([
 ]);
 
 // ============================================================================
+// Bloblang Function & Method Registry
+// ============================================================================
+
+/**
+ * Valid Bloblang functions (called without receiver)
+ * e.g., now(), uuid_v4(), env("VAR"), content()
+ */
+export const BLOBLANG_FUNCTIONS = new Set([
+  // General
+  'deleted', 'throw', 'range', 'counter', 'ksuid', 'nanoid', 'ulid', 'snowflake_id',
+  'uuid_v4', 'uuid_v7', 'random_int',
+  // Math
+  'pi',
+  // Environment
+  'env', 'file', 'file_rel', 'hostname',
+  // Time
+  'now', 'timestamp_unix', 'timestamp_unix_milli',
+  'timestamp_unix_micro', 'timestamp_unix_nano',
+  // Message context
+  'content', 'json', 'metadata', 'meta',  // meta is deprecated alias
+  'error', 'errored', 'error_source_label',
+  'batch_index', 'batch_size',
+  'tracing_id', 'tracing_span',
+  // Data generation
+  'fake',
+  // Root/this (technically keywords but used like functions)
+  'root', 'this',
+]);
+
+/**
+ * Valid Bloblang methods (called with receiver: value.method())
+ * e.g., this.parse_json(), content().uppercase()
+ */
+export const BLOBLANG_METHODS = new Set([
+  // String methods
+  'capitalize', 'lowercase', 'uppercase', 'trim', 'trim_prefix', 'trim_suffix',
+  'split', 'replace_all', 'replace_all_many', 'repeat', 'reverse', 'slice',
+  'contains', 'has_prefix', 'has_suffix', 'index_of', 'length',
+  'escape_html', 'unescape_html', 'escape_url_query', 'unescape_url_query',
+  'format', 'quote', 'unquote', 'slug', 'strip_html', 'unicode_segments',
+  'filepath_join', 'filepath_split',
+  // Regex methods
+  're_match', 're_find_all', 're_find_all_object', 're_find_all_submatch',
+  're_find_object', 're_replace_all',
+  // Number methods
+  'abs', 'ceil', 'floor', 'round', 'log', 'log10', 'pow', 'sin', 'cos', 'tan',
+  'float32', 'float64', 'int8', 'int16', 'int32', 'int64',
+  'uint8', 'uint16', 'uint32', 'uint64',
+  'bitwise_and', 'bitwise_or', 'bitwise_xor',
+  // Array/Object methods
+  'map_each', 'map_each_key', 'filter', 'fold', 'flatten', 'sort', 'sort_by',
+  'unique', 'append', 'concat', 'all', 'any', 'sum', 'min', 'max',
+  'join', 'index', 'find', 'find_all', 'find_by', 'find_all_by',
+  'enumerated', 'zip',
+  'keys', 'values', 'get', 'merge', 'assign', 'with', 'without',
+  'collapse', 'explode', 'key_values', 'squash', 'diff', 'patch',
+  'json_path', 'json_schema',
+  // Parsing/Formatting methods
+  'parse_json', 'format_json', 'parse_yaml', 'format_yaml',
+  'parse_xml', 'format_xml', 'parse_csv', 'parse_msgpack', 'format_msgpack',
+  'parse_url', 'parse_parquet', 'parse_form_url_encoded',
+  'infer_schema', 'bloblang',
+  // Type coercion methods
+  'string', 'number', 'bool', 'bytes', 'array', 'type',
+  'not_null', 'not_empty', 'timestamp',
+  // Timestamp methods
+  'ts_format', 'ts_parse', 'ts_strftime', 'ts_strptime',
+  'ts_unix', 'ts_unix_milli', 'ts_unix_micro', 'ts_unix_nano',
+  'ts_tz', 'ts_round', 'ts_add_iso8601', 'ts_sub', 'ts_sub_iso8601',
+  'parse_duration', 'parse_duration_iso8601',
+  // Encoding methods
+  'encode', 'decode', 'compress', 'decompress', 'hash',
+  'encrypt_aes', 'decrypt_aes', 'compare_argon2', 'compare_bcrypt',
+  'uuid_v5',
+  // General utility methods
+  'apply', 'catch', 'exists', 'from', 'from_all', 'or',
+  // SQL/Vector
+  'vector',
+]);
+
+/**
+ * Common Bloblang method/function misspellings (camelCase, wrong names, etc.)
+ * Maps incorrect → correct
+ */
+export const BLOBLANG_MISSPELLINGS: Record<string, string> = {
+  // JSON parsing - most common AI mistakes
+  'parsejson': 'parse_json',
+  'parseJson': 'parse_json',
+  'parse_JSON': 'parse_json',
+  'parseJSON': 'parse_json',
+  'jsonParse': 'parse_json',
+  'json_parse': 'parse_json',
+  'fromjson': 'parse_json',
+  'fromJson': 'parse_json',
+  'from_json': 'parse_json',  // common confusion with other languages
+
+  // JSON formatting
+  'formatjson': 'format_json',
+  'formatJson': 'format_json',
+  'format_JSON': 'format_json',
+  'tojson': 'format_json',
+  'toJson': 'format_json',
+  'to_json': 'format_json',
+  'jsonFormat': 'format_json',
+  'stringify': 'format_json',
+  'JSON_stringify': 'format_json',
+
+  // Array iteration - very common AI mistake
+  'mapeach': 'map_each',
+  'mapEach': 'map_each',
+  'map_Each': 'map_each',
+  'foreach': 'map_each',
+  'forEach': 'map_each',
+  'for_each': 'map_each',  // processor name, not method
+
+  // YAML parsing
+  'parseyaml': 'parse_yaml',
+  'parseYaml': 'parse_yaml',
+  'parse_YAML': 'parse_yaml',
+  'yamlParse': 'parse_yaml',
+  'fromyaml': 'parse_yaml',
+  'fromYaml': 'parse_yaml',
+
+  // YAML formatting
+  'formatyaml': 'format_yaml',
+  'formatYaml': 'format_yaml',
+  'toyaml': 'format_yaml',
+  'toYaml': 'format_yaml',
+  'to_yaml': 'format_yaml',
+
+  // XML
+  'parsexml': 'parse_xml',
+  'parseXml': 'parse_xml',
+  'parseXML': 'parse_xml',
+  'formatxml': 'format_xml',
+  'formatXml': 'format_xml',
+  'toxml': 'format_xml',
+  'toXml': 'format_xml',
+
+  // String methods
+  'toUpperCase': 'uppercase',
+  'toUppercase': 'uppercase',
+  'toUpper': 'uppercase',
+  'upper': 'uppercase',
+  'toLowerCase': 'lowercase',
+  'toLowercase': 'lowercase',
+  'toLower': 'lowercase',
+  'lower': 'lowercase',
+  'replaceAll': 'replace_all',
+  'replace': 'replace_all',
+  'startsWith': 'has_prefix',
+  'starts_with': 'has_prefix',
+  'endsWith': 'has_suffix',
+  'ends_with': 'has_suffix',
+  'indexOf': 'index_of',
+  'indexof': 'index_of',
+  'trimStart': 'trim_prefix',
+  'trimEnd': 'trim_suffix',
+  'trimLeft': 'trim_prefix',
+  'trimRight': 'trim_suffix',
+
+  // Array methods
+  'sortBy': 'sort_by',
+  'findAll': 'find_all',
+  'find_All': 'find_all',
+  'findBy': 'find_by',
+  'find_By': 'find_by',
+  'findAllBy': 'find_all_by',
+  'keyValues': 'key_values',
+  'jsonPath': 'json_path',
+  'jsonSchema': 'json_schema',
+
+  // Type methods
+  'toString': 'string',
+  'to_string': 'string',
+  'toNumber': 'number',
+  'to_number': 'number',
+  'toInt': 'number',
+  'to_int': 'number',
+  'toFloat': 'number',
+  'to_float': 'number',
+  'toBool': 'bool',
+  'to_bool': 'bool',
+  'toBoolean': 'bool',
+  'toArray': 'array',
+  'to_array': 'array',
+  'toBytes': 'bytes',
+  'to_bytes': 'bytes',
+
+  // Timestamp methods
+  'tsFormat': 'ts_format',
+  'tsParse': 'ts_parse',
+  'tsUnix': 'ts_unix',
+  'formatTime': 'ts_format',
+  'parseTime': 'ts_parse',
+  'format_time': 'ts_format',
+  'parse_time': 'ts_parse',
+  'formatTimestamp': 'ts_format',
+  'parseTimestamp': 'ts_parse',
+
+  // Other common mistakes
+  'urlEncode': 'escape_url_query',
+  'url_encode': 'escape_url_query',
+  'encodeUrl': 'escape_url_query',
+  'encode_url': 'escape_url_query',
+  'urlDecode': 'unescape_url_query',
+  'url_decode': 'unescape_url_query',
+  'decodeUrl': 'unescape_url_query',
+  'decode_url': 'unescape_url_query',
+  'htmlEscape': 'escape_html',
+  'html_escape': 'escape_html',
+  'escapeHtml': 'escape_html',
+  'htmlUnescape': 'unescape_html',
+  'unescapeHtml': 'unescape_html',
+  'stripHtml': 'strip_html',
+  'stripHTML': 'strip_html',
+  'removeHtml': 'strip_html',
+
+  // Functions that should be methods
+  'len': 'length',
+  'size': 'length',
+  'count': 'length',
+
+  // UUID variations
+  'uuidv4': 'uuid_v4',
+  'uuid': 'uuid_v4',
+  'uuidV4': 'uuid_v4',
+  'generateUuid': 'uuid_v4',
+  'uuidv7': 'uuid_v7',
+  'uuidV7': 'uuid_v7',
+
+  // Encoding
+  'base64Encode': 'encode',
+  'base64_encode': 'encode',
+  'base64Decode': 'decode',
+  'base64_decode': 'decode',
+};
+
+// ============================================================================
 // Validation Result Types
 // ============================================================================
 
@@ -331,6 +570,7 @@ function validateBloblang(
   path: string,
   errors: ValidationError[]
 ): void {
+  // Check for known syntax errors (regex patterns)
   for (const check of BLOBLANG_ERRORS) {
     if (check.pattern.test(content)) {
       errors.push({
@@ -340,6 +580,139 @@ function validateBloblang(
       });
     }
   }
+
+  // Validate method and function names
+  validateBloblangMethods(content, path, errors);
+}
+
+/**
+ * Validate Bloblang method and function names
+ * Detects invalid/misspelled methods like .parseJson() instead of .parse_json()
+ */
+function validateBloblangMethods(
+  content: string,
+  path: string,
+  errors: ValidationError[]
+): void {
+  // Track already-reported methods to avoid duplicates
+  const reported = new Set<string>();
+
+  // Pattern 1: Method calls - .methodName( or .methodName()
+  const methodPattern = /\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+  let match;
+
+  while ((match = methodPattern.exec(content)) !== null) {
+    const methodName = match[1];
+
+    // Skip if already reported
+    if (reported.has(methodName)) continue;
+
+    // Skip known valid methods
+    if (BLOBLANG_METHODS.has(methodName)) continue;
+
+    // Check if it looks like a misspelling or has method-like casing
+    const isCamelCase = /[a-z][A-Z]/.test(methodName);
+    const hasKnownMisspelling = methodName in BLOBLANG_MISSPELLINGS;
+    const looksLikeMethod = isCamelCase || hasKnownMisspelling ||
+      methodName.startsWith('parse') || methodName.startsWith('format') ||
+      methodName.startsWith('to') || methodName.startsWith('get') ||
+      methodName.startsWith('is') || methodName.startsWith('has');
+
+    if (!looksLikeMethod) continue;
+
+    reported.add(methodName);
+
+    // Get suggestion
+    const suggestion = findSimilarBloblang(methodName, 'method');
+
+    errors.push({
+      path,
+      message: `Unknown Bloblang method: .${methodName}()`,
+      suggestion: suggestion
+        ? `Did you mean .${suggestion}()?`
+        : 'Check Bloblang documentation for valid method names',
+    });
+  }
+
+  // Pattern 2: Function calls at expression start or after operators
+  const functionPattern = /(?:^|[=\s,(\[{])([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/gm;
+
+  while ((match = functionPattern.exec(content)) !== null) {
+    const funcName = match[1];
+
+    // Skip if already reported
+    if (reported.has(funcName)) continue;
+
+    // Skip known valid functions
+    if (BLOBLANG_FUNCTIONS.has(funcName)) continue;
+
+    // Skip known valid methods (might be chained)
+    if (BLOBLANG_METHODS.has(funcName)) continue;
+
+    // Skip common Bloblang keywords
+    if (['if', 'else', 'let', 'match', 'true', 'false', 'null'].includes(funcName)) continue;
+
+    // Check if this looks like a misspelled function
+    const hasKnownMisspelling = funcName in BLOBLANG_MISSPELLINGS;
+    const isCamelCase = /[a-z][A-Z]/.test(funcName);
+
+    // Only flag if it looks like a known misspelling or has camelCase
+    if (!hasKnownMisspelling && !isCamelCase) continue;
+
+    reported.add(funcName);
+
+    const suggestion = findSimilarBloblang(funcName, 'function');
+
+    errors.push({
+      path,
+      message: `Unknown Bloblang function: ${funcName}()`,
+      suggestion: suggestion
+        ? `Did you mean ${suggestion}()?`
+        : 'Check Bloblang documentation for valid function names',
+    });
+  }
+}
+
+/**
+ * Find similar Bloblang method/function name for suggestions
+ */
+function findSimilarBloblang(input: string, type: 'method' | 'function'): string | null {
+  // Check for known misspellings first
+  if (input in BLOBLANG_MISSPELLINGS) {
+    return BLOBLANG_MISSPELLINGS[input];
+  }
+
+  // Also check lowercase version
+  const inputLower = input.toLowerCase();
+  if (inputLower in BLOBLANG_MISSPELLINGS) {
+    return BLOBLANG_MISSPELLINGS[inputLower];
+  }
+
+  // Convert camelCase to snake_case and check
+  const snakeCase = input.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
+  if (type === 'method' && BLOBLANG_METHODS.has(snakeCase)) {
+    return snakeCase;
+  }
+  if (type === 'function' && BLOBLANG_FUNCTIONS.has(snakeCase)) {
+    return snakeCase;
+  }
+
+  // Check for similar names in the appropriate registry
+  const registry = type === 'method' ? BLOBLANG_METHODS : BLOBLANG_FUNCTIONS;
+
+  for (const valid of registry) {
+    // Check if input is substring of valid or vice versa
+    if (valid.includes(inputLower) || inputLower.includes(valid)) {
+      return valid;
+    }
+    // Check for common prefix (at least 4 chars)
+    if (inputLower.length >= 4 && valid.length >= 4 &&
+        valid.substring(0, 4) === inputLower.substring(0, 4)) {
+      return valid;
+    }
+  }
+
+  return null;
 }
 
 /**

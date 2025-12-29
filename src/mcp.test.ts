@@ -4,7 +4,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { validatePipelineYaml } from './pipeline-validator';
+import {
+  validatePipelineYaml,
+  BLOBLANG_FUNCTIONS,
+  BLOBLANG_METHODS,
+  BLOBLANG_MISSPELLINGS,
+} from './pipeline-validator';
 
 // We need to test the internal functions, so we'll test through the public interface
 // or export them for testing. For now, test the validator directly.
@@ -196,5 +201,113 @@ output:
     it.todo('should return proper JSON-RPC response format');
     it.todo('should return error -32602 when yaml missing');
     it.todo('should return content as text type');
+  });
+
+  describe('Bloblang method/function registry', () => {
+    describe('BLOBLANG_FUNCTIONS registry', () => {
+      it('should contain core functions', () => {
+        expect(BLOBLANG_FUNCTIONS.has('now')).toBe(true);
+        expect(BLOBLANG_FUNCTIONS.has('uuid_v4')).toBe(true);
+        expect(BLOBLANG_FUNCTIONS.has('deleted')).toBe(true);
+        expect(BLOBLANG_FUNCTIONS.has('env')).toBe(true);
+        expect(BLOBLANG_FUNCTIONS.has('content')).toBe(true);
+        expect(BLOBLANG_FUNCTIONS.has('json')).toBe(true);
+      });
+
+      it('should contain time functions', () => {
+        expect(BLOBLANG_FUNCTIONS.has('timestamp_unix')).toBe(true);
+        expect(BLOBLANG_FUNCTIONS.has('timestamp_unix_milli')).toBe(true);
+      });
+
+      it('should not contain methods', () => {
+        // These are methods, not functions
+        expect(BLOBLANG_FUNCTIONS.has('parse_json')).toBe(false);
+        expect(BLOBLANG_FUNCTIONS.has('uppercase')).toBe(false);
+        expect(BLOBLANG_FUNCTIONS.has('map_each')).toBe(false);
+      });
+    });
+
+    describe('BLOBLANG_METHODS registry', () => {
+      it('should contain string methods', () => {
+        expect(BLOBLANG_METHODS.has('uppercase')).toBe(true);
+        expect(BLOBLANG_METHODS.has('lowercase')).toBe(true);
+        expect(BLOBLANG_METHODS.has('trim')).toBe(true);
+        expect(BLOBLANG_METHODS.has('split')).toBe(true);
+        expect(BLOBLANG_METHODS.has('replace_all')).toBe(true);
+      });
+
+      it('should contain parsing methods', () => {
+        expect(BLOBLANG_METHODS.has('parse_json')).toBe(true);
+        expect(BLOBLANG_METHODS.has('format_json')).toBe(true);
+        expect(BLOBLANG_METHODS.has('parse_yaml')).toBe(true);
+        expect(BLOBLANG_METHODS.has('parse_xml')).toBe(true);
+      });
+
+      it('should contain array methods', () => {
+        expect(BLOBLANG_METHODS.has('map_each')).toBe(true);
+        expect(BLOBLANG_METHODS.has('filter')).toBe(true);
+        expect(BLOBLANG_METHODS.has('fold')).toBe(true);
+        expect(BLOBLANG_METHODS.has('flatten')).toBe(true);
+        expect(BLOBLANG_METHODS.has('sort')).toBe(true);
+      });
+
+      it('should contain timestamp methods', () => {
+        expect(BLOBLANG_METHODS.has('ts_format')).toBe(true);
+        expect(BLOBLANG_METHODS.has('ts_parse')).toBe(true);
+        expect(BLOBLANG_METHODS.has('ts_unix')).toBe(true);
+      });
+
+      it('should not contain camelCase variants (those are misspellings)', () => {
+        expect(BLOBLANG_METHODS.has('parseJson')).toBe(false);
+        expect(BLOBLANG_METHODS.has('mapEach')).toBe(false);
+        expect(BLOBLANG_METHODS.has('toUpperCase')).toBe(false);
+      });
+    });
+
+    describe('BLOBLANG_MISSPELLINGS mapping', () => {
+      it('should map parseJson to parse_json', () => {
+        expect(BLOBLANG_MISSPELLINGS['parseJson']).toBe('parse_json');
+        expect(BLOBLANG_MISSPELLINGS['parsejson']).toBe('parse_json');
+        expect(BLOBLANG_MISSPELLINGS['parseJSON']).toBe('parse_json');
+      });
+
+      it('should map mapEach to map_each', () => {
+        expect(BLOBLANG_MISSPELLINGS['mapEach']).toBe('map_each');
+        expect(BLOBLANG_MISSPELLINGS['mapeach']).toBe('map_each');
+        expect(BLOBLANG_MISSPELLINGS['forEach']).toBe('map_each');
+      });
+
+      it('should map toJson variants to format_json', () => {
+        expect(BLOBLANG_MISSPELLINGS['toJson']).toBe('format_json');
+        expect(BLOBLANG_MISSPELLINGS['tojson']).toBe('format_json');
+        expect(BLOBLANG_MISSPELLINGS['stringify']).toBe('format_json');
+      });
+
+      it('should map string method misspellings', () => {
+        expect(BLOBLANG_MISSPELLINGS['toUpperCase']).toBe('uppercase');
+        expect(BLOBLANG_MISSPELLINGS['toLowerCase']).toBe('lowercase');
+        expect(BLOBLANG_MISSPELLINGS['replaceAll']).toBe('replace_all');
+      });
+
+      it('should map common AI mistakes', () => {
+        expect(BLOBLANG_MISSPELLINGS['from_json']).toBe('parse_json');
+        expect(BLOBLANG_MISSPELLINGS['to_json']).toBe('format_json');
+        expect(BLOBLANG_MISSPELLINGS['for_each']).toBe('map_each');
+      });
+    });
+
+    describe('Registry coverage', () => {
+      it('should have reasonable number of functions', () => {
+        expect(BLOBLANG_FUNCTIONS.size).toBeGreaterThan(20);
+      });
+
+      it('should have reasonable number of methods', () => {
+        expect(BLOBLANG_METHODS.size).toBeGreaterThan(80);
+      });
+
+      it('should have misspellings for common patterns', () => {
+        expect(Object.keys(BLOBLANG_MISSPELLINGS).length).toBeGreaterThan(50);
+      });
+    });
   });
 });
