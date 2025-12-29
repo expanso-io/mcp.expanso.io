@@ -2480,6 +2480,116 @@ output:
     topic: secure-data`,
     bloblangPatterns: ['tls configuration', 'parse_json()', 'now()'],
   },
+
+  // ============================================================================
+  // INDUSTRIAL/DATABASE INTEGRATIONS (from UMH tutorials)
+  // ============================================================================
+  {
+    id: 'opcua-mqtt-bridge',
+    name: 'OPC-UA to MQTT Bridge',
+    description: 'Bridge OPC-UA data to MQTT with dynamic topic paths from node metadata',
+    keywords: ['opcua', 'mqtt', 'iiot', 'plc', 'industrial', 'bridge', 'ot'],
+    components: {
+      inputs: ['opcua'],
+      processors: ['mapping'],
+      outputs: ['mqtt'],
+    },
+    yaml: `input:
+  opcua:
+    endpoint: 'opc.tcp://localhost:46010'
+    nodeIDs: ['ns=2;s=IoTSensors']
+
+pipeline:
+  processors:
+    - mapping: |
+        root = {
+          meta("opcua_path"): this,
+          "timestamp_unix": timestamp_unix()
+        }
+
+output:
+  mqtt:
+    urls:
+      - 'localhost:1883'
+    topic: 'ia/raw/opcuasimulator/\${! meta("opcua_path") }'
+    client_id: 'benthos-umh'`,
+    bloblangPatterns: ['meta()', 'timestamp_unix()', 'dynamic topic interpolation'],
+  },
+
+  {
+    id: 'kafka-influxdb-lineprotocol',
+    name: 'Kafka to InfluxDB Line Protocol',
+    description: 'Transform Kafka messages to InfluxDB line protocol format using topic metadata',
+    keywords: ['kafka', 'influxdb', 'timeseries', 'metrics', 'line protocol', 'http'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['http_client'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - 'ia.raw.development.ioTSensors.*'
+    consumer_group: influx-writer
+
+pipeline:
+  processors:
+    - mapping: |
+        let value = content().number().string()
+        # Split topic: ia.raw.<measurement>.<location>.<field>
+        root = meta("kafka_topic").string().split(".").index(2) +
+               ",sensor=" + meta("kafka_topic").string().split(".").index(3) + " " +
+               meta("kafka_topic").string().split(".").index(4) + "=" + $value + " "
+
+output:
+  http_client:
+    url: 'http://influxdb:8086/api/v2/write?org=myorg&bucket=mybucket'
+    verb: POST
+    headers:
+      Authorization: 'Token \${INFLUX_TOKEN}'
+      Content-Type: text/plain`,
+    bloblangPatterns: ['content()', 'number()', 'string()', 'split()', 'index()', 'meta()'],
+  },
+
+  {
+    id: 'kafka-mongodb-insert',
+    name: 'Kafka to MongoDB',
+    description: 'Insert Kafka messages into MongoDB with automatic timestamps',
+    keywords: ['kafka', 'mongodb', 'database', 'insert', 'nosql', 'document'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['mongodb'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - my-events
+    consumer_group: mongo-writer
+
+pipeline:
+  processors:
+    - mapping: |
+        root = {
+          "message": this,
+          "timestamp_unix": timestamp_unix()
+        }
+
+output:
+  mongodb:
+    url: mongodb://localhost:27017
+    database: mydb
+    collection: events
+    operation: insert-one
+    document_map: |
+      root.message = this.message
+      root.timestamp_unix = this.timestamp_unix`,
+    bloblangPatterns: ['timestamp_unix()', 'document_map', 'object literal'],
+  },
 ];
 
 /**
