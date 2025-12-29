@@ -22,6 +22,7 @@ import {
   type BloblangCategory,
 } from './bloblang-reference';
 import { suggestWithFallback } from './pattern-suggester';
+import { explainError } from './error-explainer';
 
 // MCP Protocol types
 interface McpRequest {
@@ -200,6 +201,31 @@ const TOOLS = [
         },
       },
       required: ['use_case'],
+    },
+  },
+  {
+    name: 'explain_error',
+    description:
+      'Get detailed explanation and fix suggestions for a pipeline validation or runtime error. Transforms cryptic error messages into actionable guidance with before/after code examples.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        error_message: {
+          type: 'string',
+          description: 'The error message to explain',
+        },
+        context: {
+          type: 'string',
+          description:
+            'Optional: the YAML snippet or code that caused the error',
+        },
+        error_type: {
+          type: 'string',
+          enum: ['validation', 'runtime', 'connection', 'bloblang', 'unknown'],
+          description: 'Type of error (auto-detected if not specified)',
+        },
+      },
+      required: ['error_message'],
     },
   },
 ];
@@ -740,6 +766,35 @@ async function handleToolCall(
         input_type,
         output_type,
         limit,
+      });
+
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        },
+      };
+    }
+
+    case 'explain_error': {
+      const error_message = args?.error_message as string;
+      const context = args?.context as string | undefined;
+      const error_type = args?.error_type as 'validation' | 'runtime' | 'connection' | 'bloblang' | 'unknown' | undefined;
+
+      if (!error_message) {
+        return errorResponse(id, -32602, 'Missing required argument: error_message');
+      }
+
+      const result = explainError({
+        error_message,
+        context,
+        error_type,
       });
 
       return {
