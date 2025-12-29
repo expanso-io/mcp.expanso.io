@@ -26,9 +26,10 @@ export function getChatHtml(): string {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: var(--bg);
       color: var(--text);
-      min-height: 100vh;
+      height: 100vh;
       display: flex;
       flex-direction: column;
+      overflow: hidden;
     }
     header {
       padding: 1rem 1.5rem;
@@ -78,11 +79,7 @@ export function getChatHtml(): string {
       flex-direction: column;
       background: #1e1e2e;
       min-width: 400px;
-      overflow-y: auto;
-      position: sticky;
-      top: 0;
-      align-self: flex-start;
-      max-height: 100%;
+      overflow: hidden;
     }
     .code-panel-header {
       padding: 0.75rem 1rem;

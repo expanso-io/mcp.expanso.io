@@ -53,9 +53,12 @@ function hallucinationsToErrors(hallucinations: Hallucination[]): string[] {
     .map(formatHallucination);
 }
 
-async function validateWithExpanso(yaml: string): Promise<ExternalValidationResult> {
+async function validateWithExpanso(yaml: string, autoCorrect = false): Promise<ExternalValidationResult> {
   try {
-    const response = await fetch('https://validate.expanso.io/validate', {
+    const url = autoCorrect
+      ? 'https://validate.expanso.io/validate?auto_correct=true'
+      : 'https://validate.expanso.io/validate';
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: yaml,
@@ -594,22 +597,22 @@ ${context || 'No relevant documentation found for this query.'}`;
 
   let responseText = (response as { response: string }).response;
 
-  // Validate any YAML code blocks in the response
+  // Validate and auto-fix any YAML code blocks in the response
   const yamlBlocks = findYamlInResponse(responseText);
-  const validationWarnings: string[] = [];
   const distinctId = getDistinctId(request);
+  let finalYaml = yamlBlocks[0] || ''; // Track the final YAML for component links
 
   for (const yaml of yamlBlocks) {
     // Run local validation first (fast)
     const localResult = validatePipelineYaml(yaml);
 
-    // Run external Expanso validation (authoritative)
-    const externalResult = await validateWithExpanso(yaml);
+    // Run external Expanso validation with auto-correction enabled
+    const externalResult = await validateWithExpanso(yaml, true);
 
     // Generate unique ID for this YAML
     const yamlId = `yaml_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    // Categorize local errors
+    // Categorize local errors (for analytics only)
     const structureErrors = localResult.errors
       .filter(e => e.path === 'root' || e.path.startsWith('root.') || e.path === 'pipeline')
       .map(e => `${e.path}: ${e.message}`);
@@ -621,17 +624,31 @@ ${context || 'No relevant documentation found for this query.'}`;
                    !bloblangErrors.includes(`${e.path}: ${e.message}`))
       .map(e => `${e.path}: ${e.message}`);
 
-    // Combined validity: both must pass
-    const isValid = localResult.valid && externalResult.valid;
+    // Check if we have a corrected version to use
+    const correctedYaml = externalResult.corrected_yaml;
+    const wasCorrected = !externalResult.valid && !!correctedYaml;
 
-    // Store full YAML in KV (non-blocking)
+    // Silently replace YAML with corrected version if available
+    if (wasCorrected && correctedYaml) {
+      responseText = replaceYamlInResponse(responseText, yaml, correctedYaml);
+      finalYaml = correctedYaml;
+    } else if (yaml === yamlBlocks[0]) {
+      finalYaml = yaml;
+    }
+
+    // Combined validity: both must pass (or was successfully corrected)
+    const isValid = (localResult.valid && externalResult.valid) || wasCorrected;
+
+    // Store full YAML in KV (non-blocking) - include correction info
     if (env.CONTENT_CACHE) {
       env.CONTENT_CACHE.put(yamlId, JSON.stringify({
-        yaml,
+        yaml: wasCorrected ? correctedYaml : yaml,
+        originalYaml: wasCorrected ? yaml : undefined,
         userMessage: body.message,
         timestamp: new Date().toISOString(),
         localValid: localResult.valid,
         externalValid: externalResult.valid,
+        wasAutoCorrected: wasCorrected,
         structureErrors,
         bloblangErrors,
         componentErrors,
@@ -640,40 +657,26 @@ ${context || 'No relevant documentation found for this query.'}`;
         .catch(() => {});
     }
 
-    // Track to PostHog with categorized errors (non-blocking)
+    // Track to PostHog with categorized errors (non-blocking) - track corrections
     const externalErrors = hallucinationsToErrors(externalResult.hallucinations);
     trackYamlGenerated(
       env.POSTHOG_API_KEY,
       distinctId,
-      yaml,
+      wasCorrected ? correctedYaml! : yaml,
       body.message,
       {
         valid: isValid,
-        errors: [...localResult.errors.map(e => `${e.path}: ${e.message}`), ...externalErrors],
+        errors: wasCorrected ? [] : [...localResult.errors.map(e => `${e.path}: ${e.message}`), ...externalErrors],
         warnings: localResult.warnings,
+        autoCorrected: wasCorrected,
       },
       yamlId
     ).catch(() => {});
-
-    // Add warnings for any validation failures
-    if (!localResult.valid) {
-      validationWarnings.push(formatValidationErrors(localResult));
-    }
-    if (!externalResult.valid && externalResult.hallucinations.length > 0) {
-      validationWarnings.push('**Expanso Validation Errors:**\n' + externalErrors.map(e => `- ${e}`).join('\n'));
-    }
-  }
-
-  // Append validation warnings if any YAML is invalid
-  if (validationWarnings.length > 0) {
-    responseText += '\n\n---\n**Warning: Pipeline Validation Issue**\n' +
-      validationWarnings.join('\n\n') +
-      '\n\nPlease refer to the [Components documentation](https://docs.expanso.io/components) for valid pipeline syntax.';
   }
 
   // Add validated component documentation links for any YAML in the response
-  if (yamlBlocks.length > 0) {
-    const componentsSection = generateComponentsSection(yamlBlocks[0]);
+  if (finalYaml) {
+    const componentsSection = generateComponentsSection(finalYaml);
     if (componentsSection) {
       responseText += '\n\n' + componentsSection;
     }
@@ -745,4 +748,12 @@ function findYamlInResponse(text: string): string[] {
   }
 
   return blocks;
+}
+
+// Helper: Replace YAML blocks in response text
+function replaceYamlInResponse(text: string, originalYaml: string, newYaml: string): string {
+  // Find the code block containing the original YAML and replace it
+  const escapedYaml = originalYaml.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp('```(?:yaml|yml)?\\n' + escapedYaml + '\\n?```', 'g');
+  return text.replace(pattern, '```yaml\n' + newYaml + '\n```');
 }
