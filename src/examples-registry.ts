@@ -1811,3 +1811,99 @@ export function formatWelcomeExamples(examples: PipelineExample[]): WelcomeExamp
     prompt: `Show me a ${ex.name.toLowerCase()} pipeline`,
   }));
 }
+
+/**
+ * Environment bindings required for semantic search
+ */
+export interface SemanticSearchEnv {
+  AI: {
+    run(model: string, input: { text: string[] }): Promise<{ data: number[][] }>;
+  };
+  VECTORIZE?: {
+    query(
+      vector: number[],
+      options: { topK: number; returnMetadata?: 'all' | 'indexed' | 'none'; filter?: Record<string, string> }
+    ): Promise<{ matches: Array<{ id: string; score: number; metadata?: Record<string, unknown> }> }>;
+  };
+}
+
+/**
+ * Semantic search for examples using Vectorize embeddings.
+ * Falls back to keyword search if Vectorize is unavailable or returns no matches.
+ *
+ * @param query - Natural language search query
+ * @param env - Environment with AI and optional VECTORIZE bindings
+ * @param limit - Maximum number of results (default 3)
+ * @returns Promise<PipelineExample[]> - Matching examples sorted by relevance
+ */
+export async function semanticSearchExamples(
+  query: string,
+  env: SemanticSearchEnv,
+  limit: number = 3
+): Promise<PipelineExample[]> {
+  // If Vectorize is not available, fall back to keyword search
+  if (!env.VECTORIZE) {
+    return searchExamples(query, limit);
+  }
+
+  try {
+    // Generate embedding for the query
+    const embeddingResult = await env.AI.run('@cf/baai/bge-base-en-v1.5', {
+      text: [query],
+    });
+
+    if (!embeddingResult?.data?.[0]) {
+      // Embedding generation failed, fall back to keyword search
+      return searchExamples(query, limit);
+    }
+
+    const embedding = embeddingResult.data[0];
+
+    // Query Vectorize with filter for examples only
+    const vectorResults = await env.VECTORIZE.query(embedding, {
+      topK: limit * 2, // Get more results to filter
+      returnMetadata: 'all',
+      filter: { type: 'example' },
+    });
+
+    if (vectorResults.matches.length === 0) {
+      // No semantic matches found, fall back to keyword search
+      return searchExamples(query, limit);
+    }
+
+    // Convert matches to PipelineExamples
+    const examples: PipelineExample[] = [];
+    for (const match of vectorResults.matches) {
+      const example = getExampleById(match.id);
+      if (example) {
+        examples.push(example);
+      }
+    }
+
+    // If no valid examples from Vectorize, fall back to keyword search
+    if (examples.length === 0) {
+      return searchExamples(query, limit);
+    }
+
+    return examples.slice(0, limit);
+  } catch (error) {
+    // On any error, fall back to keyword search
+    console.error('Semantic search failed, falling back to keyword search:', error);
+    return searchExamples(query, limit);
+  }
+}
+
+/**
+ * Get searchable text for an example (used for indexing)
+ */
+export function getExampleSearchText(example: PipelineExample): string {
+  const components = [
+    ...example.components.inputs,
+    ...example.components.processors,
+    ...example.components.outputs,
+  ].join(' ');
+
+  const bloblang = example.bloblangPatterns?.join(' ') || '';
+
+  return `${example.name} ${example.description} ${example.keywords.join(' ')} ${components} ${bloblang}`;
+}

@@ -11,6 +11,7 @@
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { PIPELINE_EXAMPLES, getExampleSearchText } from '../src/examples-registry';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -59,6 +60,7 @@ interface Chunk {
     title: string;
     snippet: string;
     section: string;
+    type: 'doc' | 'example';
   };
 }
 
@@ -96,12 +98,39 @@ async function main() {
       chunks.push({
         id: generateId(uri, section.heading),
         text: section.content,
-        metadata: { uri, domain, title, snippet: section.content.slice(0, 200), section: section.heading },
+        metadata: {
+          uri,
+          domain,
+          title,
+          snippet: section.content.slice(0, 200),
+          section: section.heading,
+          type: 'doc',
+        },
       });
     }
   }
 
-  console.log(`Fetched ${RESOURCES.length} URLs, created ${chunks.length} chunks in ${Date.now() - startTime}ms`);
+  console.log(`Fetched ${RESOURCES.length} URLs, created ${chunks.length} doc chunks in ${Date.now() - startTime}ms`);
+
+  // Add pipeline examples to chunks
+  console.log(`Adding ${PIPELINE_EXAMPLES.length} pipeline examples...`);
+  for (const example of PIPELINE_EXAMPLES) {
+    const searchText = getExampleSearchText(example);
+    chunks.push({
+      id: example.id,
+      text: searchText,
+      metadata: {
+        uri: `examples://expanso.io/${example.id}`,
+        domain: 'examples.expanso.io',
+        title: example.name,
+        snippet: example.description.slice(0, 200),
+        section: example.name,
+        type: 'example',
+      },
+    });
+  }
+
+  console.log(`Total chunks to index: ${chunks.length} (${chunks.filter(c => c.metadata.type === 'doc').length} docs + ${chunks.filter(c => c.metadata.type === 'example').length} examples)`);
 
   if (chunks.length === 0) {
     console.log('No chunks to index');
