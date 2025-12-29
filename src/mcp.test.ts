@@ -310,4 +310,315 @@ output:
       });
     });
   });
+
+  describe('Field-level validation', () => {
+    describe('Required field detection', () => {
+      it('should detect missing required field (kafka without addresses)', () => {
+        const yaml = `
+input:
+  kafka:
+    topics: [my-topic]
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e =>
+          e.message.includes('Missing required field') &&
+          e.message.includes('addresses')
+        )).toBe(true);
+      });
+
+      it('should detect missing required field (kafka without topics)', () => {
+        const yaml = `
+input:
+  kafka:
+    addresses: [localhost:9092]
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e =>
+          e.message.includes('Missing required field') &&
+          e.message.includes('topics')
+        )).toBe(true);
+      });
+
+      it('should pass when all required fields present', () => {
+        const yaml = `
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [my-topic]
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(true);
+      });
+    });
+
+    describe('Unknown field detection', () => {
+      it('should detect typo in field name (addres → addresses)', () => {
+        const yaml = `
+input:
+  kafka:
+    addres: [localhost:9092]
+    topics: [my-topic]
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e =>
+          e.message.includes('Unknown field') &&
+          e.message.includes('addres')
+        )).toBe(true);
+        expect(result.errors.some(e =>
+          e.suggestion?.includes('addresses')
+        )).toBe(true);
+      });
+
+      it('should detect typo in field name (topic → topics)', () => {
+        const yaml = `
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topic: [my-topic]
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e =>
+          e.message.includes('Unknown field') &&
+          e.message.includes('topic')
+        )).toBe(true);
+        expect(result.errors.some(e =>
+          e.suggestion?.includes('topics')
+        )).toBe(true);
+      });
+
+      it('should detect completely unknown field', () => {
+        const yaml = `
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [my-topic]
+    unknown_field: value
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e =>
+          e.message.includes('Unknown field') &&
+          e.message.includes('unknown_field')
+        )).toBe(true);
+      });
+    });
+
+    describe('Type validation', () => {
+      it('should detect wrong type for array field (string instead of array)', () => {
+        const yaml = `
+input:
+  kafka:
+    addresses: localhost:9092
+    topics: [my-topic]
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e =>
+          e.message.includes('Expected array')
+        )).toBe(true);
+      });
+
+      it('should detect wrong type for boolean field', () => {
+        const yaml = `
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [my-topic]
+    start_from_oldest: yes
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        // "yes" in YAML is parsed as boolean true, so this should pass
+        expect(result.valid).toBe(true);
+      });
+
+      it('should detect wrong type for object field (string instead of object)', () => {
+        const yaml = `
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [my-topic]
+    tls: enabled
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e =>
+          e.message.includes('Expected object')
+        )).toBe(true);
+      });
+    });
+
+    describe('Duration format validation', () => {
+      it('should accept valid duration format', () => {
+        const yaml = `
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [my-topic]
+    commit_period: 5s
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(true);
+      });
+
+      it('should reject invalid duration format', () => {
+        const yaml = `
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [my-topic]
+    commit_period: 5 seconds
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e =>
+          e.message.includes('Invalid duration format')
+        )).toBe(true);
+      });
+    });
+
+    describe('Enum validation', () => {
+      it('should reject invalid enum value for SASL mechanism', () => {
+        const yaml = `
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [my-topic]
+    sasl:
+      mechanism: INVALID
+      user: myuser
+      password: mypass
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e =>
+          e.message.includes('Invalid value') &&
+          e.message.includes('INVALID')
+        )).toBe(true);
+        expect(result.errors.some(e =>
+          e.suggestion?.includes('PLAIN') ||
+          e.suggestion?.includes('SCRAM')
+        )).toBe(true);
+      });
+
+      it('should accept valid enum value for SASL mechanism', () => {
+        const yaml = `
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [my-topic]
+    sasl:
+      mechanism: SCRAM-SHA-256
+      user: myuser
+      password: mypass
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(true);
+      });
+    });
+
+    describe('HTTP server input validation', () => {
+      it('should detect typo in http_server field (allowed_verb → allowed_verbs)', () => {
+        const yaml = `
+input:
+  http_server:
+    address: 0.0.0.0:8080
+    path: /api
+    allowed_verb: POST
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e =>
+          e.message.includes('Unknown field') &&
+          e.message.includes('allowed_verb')
+        )).toBe(true);
+      });
+    });
+
+    describe('AWS S3 output validation', () => {
+      it('should detect missing required bucket field', () => {
+        const yaml = `
+input:
+  generate:
+    mapping: 'root = "test"'
+output:
+  aws_s3:
+    path: /data/file.json
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e =>
+          e.message.includes('Missing required field') &&
+          e.message.includes('bucket')
+        )).toBe(true);
+      });
+    });
+
+    describe('Optional field handling', () => {
+      it('should not error on missing optional fields', () => {
+        const yaml = `
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [my-topic]
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        expect(result.valid).toBe(true);
+        // consumer_group is optional, should not cause error
+        expect(result.errors.some(e =>
+          e.message.includes('consumer_group')
+        )).toBe(false);
+      });
+    });
+
+    describe('Components without schemas', () => {
+      it('should not error on components without defined schemas', () => {
+        const yaml = `
+input:
+  amqp_0_9:
+    urls: [amqp://localhost:5672]
+output:
+  stdout: {}
+`;
+        const result = validatePipelineYaml(yaml);
+        // Should pass because amqp_0_9 is a valid component but may not have schema
+        expect(result.errors.filter(e =>
+          e.message.includes('Missing required field')
+        ).length).toBeLessThanOrEqual(0);
+      });
+    });
+  });
 });

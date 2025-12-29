@@ -5,6 +5,8 @@
  * Based on Redpanda Connect (Benthos) component catalog.
  */
 
+import { getComponentSchema, type ComponentSchema, type FieldSchema } from './component-schemas';
+
 // ============================================================================
 // Component Registry - All valid Expanso/Benthos components
 // ============================================================================
@@ -559,7 +561,261 @@ function validateComponent(
         ? `Did you mean: ${suggestions.join(', ')}?`
         : `Check the Expanso documentation for valid ${category} types`,
     });
+    return; // Don't validate fields for unknown component types
   }
+
+  // Field-level validation for known component types
+  const category = path.includes('processor') ? 'processor' : path.split('.')[0] as 'input' | 'output';
+  const componentConfig = comp[componentType];
+  if (componentConfig && typeof componentConfig === 'object') {
+    validateComponentFields(
+      componentConfig as Record<string, unknown>,
+      componentType,
+      category,
+      `${path}.${componentType}`,
+      errors
+    );
+  }
+}
+
+// ============================================================================
+// Field-Level Validation
+// ============================================================================
+
+/**
+ * Validate fields within a component against its schema
+ */
+function validateComponentFields(
+  config: Record<string, unknown>,
+  componentName: string,
+  category: 'input' | 'output' | 'processor',
+  path: string,
+  errors: ValidationError[]
+): void {
+  // Get schema for this component
+  const schema = getComponentSchema(componentName, category);
+  if (!schema) {
+    // No schema available for this component - skip field validation
+    return;
+  }
+
+  const schemaFields = schema.fields;
+  const configKeys = Object.keys(config);
+
+  // Check for required fields
+  for (const [fieldName, fieldSchema] of Object.entries(schemaFields)) {
+    if (fieldSchema.required && !(fieldName in config)) {
+      errors.push({
+        path,
+        message: `Missing required field: "${fieldName}"`,
+        suggestion: fieldSchema.examples && fieldSchema.examples.length > 0
+          ? `Add ${fieldName}: ${JSON.stringify(fieldSchema.examples[0])}`
+          : `Add ${fieldName}: <value> (${fieldSchema.description})`,
+      });
+    }
+  }
+
+  // Check for unknown fields and validate types
+  for (const key of configKeys) {
+    // Skip metadata fields
+    if (key.startsWith('_') || key === 'label' || key === 'processors') {
+      continue;
+    }
+
+    if (!(key in schemaFields)) {
+      // Unknown field - try to suggest similar field name
+      const suggestion = findSimilarField(key, Object.keys(schemaFields));
+      errors.push({
+        path: `${path}.${key}`,
+        message: `Unknown field: "${key}"`,
+        suggestion: suggestion
+          ? `Did you mean "${suggestion}"?`
+          : `Valid fields: ${Object.keys(schemaFields).slice(0, 5).join(', ')}${Object.keys(schemaFields).length > 5 ? '...' : ''}`,
+      });
+    } else {
+      // Validate field type
+      const fieldSchema = schemaFields[key];
+      const value = config[key];
+      validateFieldType(value, fieldSchema, `${path}.${key}`, errors);
+    }
+  }
+}
+
+/**
+ * Validate that a field value matches its expected type
+ */
+function validateFieldType(
+  value: unknown,
+  schema: FieldSchema,
+  path: string,
+  errors: ValidationError[]
+): void {
+  if (value === null || value === undefined) {
+    return; // Null/undefined handled by required check
+  }
+
+  switch (schema.type) {
+    case 'string':
+    case 'interpolated_string':
+    case 'duration':
+    case 'bloblang':
+      if (typeof value !== 'string') {
+        errors.push({
+          path,
+          message: `Expected string but got ${typeof value}`,
+          suggestion: `Use a string value like: "${schema.examples?.[0] || 'value'}"`,
+        });
+      }
+      // For duration, could add format validation
+      if (schema.type === 'duration' && typeof value === 'string') {
+        if (!/^\d+(\.\d+)?(ns|us|µs|ms|s|m|h)$/.test(value)) {
+          errors.push({
+            path,
+            message: `Invalid duration format: "${value}"`,
+            suggestion: 'Use format like: 1s, 500ms, 5m, 1h',
+          });
+        }
+      }
+      break;
+
+    case 'number':
+      if (typeof value !== 'number') {
+        // Allow string numbers but warn
+        if (typeof value === 'string' && !isNaN(Number(value))) {
+          // String that looks like a number - could be intentional for interpolation
+          return;
+        }
+        errors.push({
+          path,
+          message: `Expected number but got ${typeof value}`,
+          suggestion: 'Use a numeric value',
+        });
+      }
+      break;
+
+    case 'boolean':
+      if (typeof value !== 'boolean') {
+        // Allow string booleans
+        if (typeof value === 'string' && (value === 'true' || value === 'false')) {
+          return;
+        }
+        errors.push({
+          path,
+          message: `Expected boolean but got ${typeof value}`,
+          suggestion: 'Use true or false',
+        });
+      }
+      break;
+
+    case 'array':
+      if (!Array.isArray(value)) {
+        errors.push({
+          path,
+          message: `Expected array but got ${typeof value}`,
+          suggestion: 'Use array syntax: [item1, item2]',
+        });
+      }
+      break;
+
+    case 'object':
+      if (typeof value !== 'object' || Array.isArray(value)) {
+        errors.push({
+          path,
+          message: `Expected object but got ${Array.isArray(value) ? 'array' : typeof value}`,
+          suggestion: 'Use object syntax: { key: value }',
+        });
+      } else if (schema.properties && value) {
+        // Recursively validate nested object properties
+        for (const [nestedKey, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+          if (nestedKey in schema.properties) {
+            validateFieldType(nestedValue, schema.properties[nestedKey], `${path}.${nestedKey}`, errors);
+          }
+          // Note: We don't error on unknown nested fields to allow flexibility
+        }
+      }
+      break;
+  }
+
+  // Validate enum values
+  if (schema.enum && typeof value === 'string') {
+    if (!schema.enum.includes(value)) {
+      errors.push({
+        path,
+        message: `Invalid value "${value}"`,
+        suggestion: `Valid values: ${schema.enum.join(', ')}`,
+      });
+    }
+  }
+}
+
+/**
+ * Find similar field name for typo suggestions (Levenshtein distance)
+ */
+function findSimilarField(input: string, validFields: string[]): string | null {
+  const inputLower = input.toLowerCase();
+  let bestMatch: string | null = null;
+  let bestDistance = Infinity;
+
+  for (const field of validFields) {
+    const fieldLower = field.toLowerCase();
+
+    // Exact match (different case)
+    if (inputLower === fieldLower) {
+      return field;
+    }
+
+    // Check if one contains the other
+    if (inputLower.includes(fieldLower) || fieldLower.includes(inputLower)) {
+      const distance = Math.abs(input.length - field.length);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestMatch = field;
+      }
+      continue;
+    }
+
+    // Calculate Levenshtein distance for short strings
+    const distance = levenshteinDistance(inputLower, fieldLower);
+    const threshold = Math.max(2, Math.floor(input.length / 3));
+
+    if (distance <= threshold && distance < bestDistance) {
+      bestDistance = distance;
+      bestMatch = field;
+    }
+  }
+
+  return bestMatch;
+}
+
+/**
+ * Calculate Levenshtein distance between two strings
+ */
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = [];
+
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1,     // insertion
+          matrix[i - 1][j] + 1      // deletion
+        );
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
 }
 
 /**
@@ -1075,41 +1331,8 @@ function parseYaml(yamlStr: string): Record<string, unknown> {
 
     const parent = stack[stack.length - 1];
 
-    // Handle key: value
-    const colonIndex = content.indexOf(':');
-    if (colonIndex > 0) {
-      const key = content.substring(0, colonIndex).trim();
-      let value = content.substring(colonIndex + 1).trim();
-
-      // Handle inline value
-      if (value) {
-        // Remove quotes
-        if ((value.startsWith('"') && value.endsWith('"')) ||
-            (value.startsWith("'") && value.endsWith("'"))) {
-          value = value.slice(1, -1);
-        }
-        // Handle arrays like [a, b, c]
-        if (value.startsWith('[') && value.endsWith(']')) {
-          const items = value.slice(1, -1).split(',').map(s => s.trim().replace(/['"]/g, ''));
-          (parent.obj as Record<string, unknown>)[key] = items;
-        } else if (value === 'true') {
-          (parent.obj as Record<string, unknown>)[key] = true;
-        } else if (value === 'false') {
-          (parent.obj as Record<string, unknown>)[key] = false;
-        } else if (!isNaN(Number(value))) {
-          (parent.obj as Record<string, unknown>)[key] = Number(value);
-        } else {
-          (parent.obj as Record<string, unknown>)[key] = value;
-        }
-      } else {
-        // Nested object
-        const newObj: Record<string, unknown> = {};
-        (parent.obj as Record<string, unknown>)[key] = newObj;
-        stack.push({ indent, obj: newObj, key });
-      }
-    }
-    // Handle list items
-    else if (content.startsWith('- ')) {
+    // Handle list items FIRST (before checking for colons, since list items may contain colons)
+    if (content.startsWith('- ')) {
       const parentKey = parent.key;
       if (parentKey) {
         const parentParent = stack[stack.length - 2]?.obj;
@@ -1137,6 +1360,43 @@ function parseYaml(yamlStr: string): Record<string, unknown> {
           } else {
             arr.push(itemContent);
           }
+        }
+      }
+    }
+    // Handle key: value
+    else {
+      const colonIndex = content.indexOf(':');
+      if (colonIndex > 0) {
+        const key = content.substring(0, colonIndex).trim();
+        let value = content.substring(colonIndex + 1).trim();
+
+        // Handle inline value
+        if (value) {
+          // Remove quotes
+          if ((value.startsWith('"') && value.endsWith('"')) ||
+              (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1);
+          }
+          // Handle arrays like [a, b, c]
+          if (value.startsWith('[') && value.endsWith(']')) {
+            const items = value.slice(1, -1).split(',').map(s => s.trim().replace(/['"]/g, ''));
+            (parent.obj as Record<string, unknown>)[key] = items;
+          } else if (value === 'true' || value === 'yes' || value === 'on') {
+            // YAML boolean: true, yes, on
+            (parent.obj as Record<string, unknown>)[key] = true;
+          } else if (value === 'false' || value === 'no' || value === 'off') {
+            // YAML boolean: false, no, off
+            (parent.obj as Record<string, unknown>)[key] = false;
+          } else if (!isNaN(Number(value))) {
+            (parent.obj as Record<string, unknown>)[key] = Number(value);
+          } else {
+            (parent.obj as Record<string, unknown>)[key] = value;
+          }
+        } else {
+          // Nested object
+          const newObj: Record<string, unknown> = {};
+          (parent.obj as Record<string, unknown>)[key] = newObj;
+          stack.push({ indent, obj: newObj, key });
         }
       }
     }

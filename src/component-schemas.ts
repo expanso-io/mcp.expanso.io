@@ -769,7 +769,8 @@ const OUTPUT_SCHEMAS: Record<string, ComponentSchema> = {
       path: {
         type: 'interpolated_string',
         description: 'Object key/path',
-        required: true,
+        required: false,
+        default: '${!count("files")}-${!timestamp_unix_nano()}.txt',
         examples: ['${! uuid_v4() }.json', 'data/${! now().format("2006/01/02") }/${! uuid_v4() }.json'],
       },
       content_type: {
