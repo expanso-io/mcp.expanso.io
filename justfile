@@ -63,6 +63,14 @@ lint:
 clean:
     rm -rf dist/ .wrangler/
 
+# Run adversarial testing (overnight)
+adversarial *ARGS:
+    npx tsx scripts/adversarial-test.ts {{ARGS}}
+
+# Run adversarial testing with resume
+adversarial-resume:
+    npx tsx scripts/adversarial-test.ts --resume
+
 # Show Cloudflare Workers status
 status:
     wrangler whoami

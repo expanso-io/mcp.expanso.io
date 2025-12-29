@@ -33,7 +33,8 @@ src/
 
 scripts/
 ├── deploy.sh             # Orchestrates worker deploy + content indexing
-└── index-content.ts      # Fetches llms.txt, generates embeddings, uploads to Vectorize
+├── index-content.ts      # Fetches llms.txt, generates embeddings, uploads to Vectorize
+└── adversarial-test.ts   # Overnight adversarial testing for training data
 ```
 
 ### Cloudflare Bindings (wrangler.toml)
@@ -88,6 +89,29 @@ The `pipeline-validator.ts` contains a component registry for validating Expanso
 - Common hallucination patterns (e.g., wrong cache types, invalid broker configs)
 
 When adding new components, update the `COMPONENT_REGISTRY` object.
+
+## Adversarial Testing
+
+The `scripts/adversarial-test.ts` script generates prompts, sends them to the chat API, validates responses, and records results for training data collection.
+
+```bash
+just adversarial                    # Run indefinitely at 1 req/sec
+just adversarial --count=100        # Run 100 tests
+just adversarial-resume             # Resume from last position
+just adversarial --rate=5           # 5 requests per second
+```
+
+Output is saved to `data/adversarial-results.jsonl` (gitignored). Each line contains:
+- Prompt and category
+- Generated YAML blocks
+- Validation results (valid/invalid, hallucinations, corrections)
+- Timing data
+
+Prompt categories:
+- `adversarial` - Designed to trigger common LLM mistakes
+- `bloblang` - Bloblang syntax challenges
+- `use_case` - Real-world pipeline scenarios
+- `component` - Input/output/processor combinations
 
 ## Task Tracking
 
