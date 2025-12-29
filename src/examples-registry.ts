@@ -533,6 +533,1153 @@ output:
             topic: processed`,
     bloblangPatterns: ['parse_json()', 'now()', 'error()', 'meta()'],
   },
+
+  {
+    id: 'retry-with-backoff',
+    name: 'Retry with Exponential Backoff',
+    description: 'Retry failed operations with exponential backoff',
+    keywords: ['retry', 'backoff', 'exponential', 'error', 'resilience', 'fault', 'tolerance', 'recover', 'failure'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['retry', 'http', 'mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - orders
+
+pipeline:
+  processors:
+    - retry:
+        max_retries: 5
+        backoff:
+          initial_interval: 1s
+          max_interval: 30s
+          max_elapsed_time: 5m
+        processors:
+          - http:
+              url: https://api.example.com/process
+              verb: POST
+              headers:
+                Content-Type: application/json
+    - mapping: |
+        root = this.parse_json()
+        root.processed_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: processed-orders`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'try-catch-fallback',
+    name: 'Try-Catch with Fallback Processing',
+    description: 'Handle errors with fallback logic using try/catch',
+    keywords: ['try', 'catch', 'fallback', 'error', 'handling', 'graceful', 'degradation', 'recovery'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['try', 'catch', 'mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - try:
+        - mapping: |
+            root = this.parse_json()
+            root.validated = true
+    - catch:
+        - mapping: |
+            # Fallback: keep original as string if JSON parsing fails
+            root.raw_data = this
+            root.validated = false
+            root.parse_error = error()
+    - mapping: |
+        root.processed_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: validated-events`,
+    bloblangPatterns: ['parse_json()', 'error()', 'now()'],
+  },
+
+  {
+    id: 'validation-rejection',
+    name: 'Message Validation with Rejection',
+    description: 'Validate messages and reject malformed ones',
+    keywords: ['validate', 'validation', 'reject', 'schema', 'check', 'filter', 'malformed', 'quality'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['switch'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - incoming
+
+pipeline:
+  processors:
+    - mapping: |
+        let data = this.parse_json()
+
+        # Validate required fields
+        let valid = $data.id != null && $data.type != null && $data.payload != null
+
+        root = $data
+        meta valid = if $valid { "true" } else { "false" }
+        meta rejection_reason = if !$valid {
+          if $data.id == null { "missing id" }
+          else if $data.type == null { "missing type" }
+          else { "missing payload" }
+        } else { "" }
+
+output:
+  switch:
+    cases:
+      - check: meta("valid") == "true"
+        output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: valid-messages
+      - output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: rejected-messages`,
+    bloblangPatterns: ['parse_json()', 'let', 'if { } else { }', 'meta'],
+  },
+
+  {
+    id: 'rate-limited-processing',
+    name: 'Rate Limited Processing',
+    description: 'Process messages with rate limiting to protect downstream services',
+    keywords: ['rate', 'limit', 'throttle', 'backpressure', 'protect', 'downstream', 'control', 'flow'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['rate_limit', 'http', 'mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - requests
+
+pipeline:
+  processors:
+    - rate_limit:
+        resource: api_limiter
+        count: 100
+    - http:
+        url: https://api.example.com/process
+        verb: POST
+    - mapping: |
+        root = this.parse_json()
+        root.rate_limited_at = now()
+
+rate_limit_resources:
+  - label: api_limiter
+    local:
+      count: 100
+      interval: 1s
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: processed`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  // ============================================================================
+  // PARALLELISM & WORKFLOW
+  // ============================================================================
+  {
+    id: 'fan-out-fan-in',
+    name: 'Fan-Out Fan-In Pattern',
+    description: 'Split message, process branches in parallel, merge results',
+    keywords: ['parallel', 'fan', 'out', 'in', 'branch', 'merge', 'concurrent', 'split', 'workflow'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['branch', 'mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - orders
+
+pipeline:
+  processors:
+    - branch:
+        request_map: 'root = this'
+        processors:
+          - mapping: |
+              root.enriched_user = {"lookup": "user", "id": this.user_id}
+        result_map: 'root.user_data = this.enriched_user'
+    - branch:
+        request_map: 'root = this'
+        processors:
+          - mapping: |
+              root.enriched_product = {"lookup": "product", "id": this.product_id}
+        result_map: 'root.product_data = this.enriched_product'
+    - mapping: |
+        root = this
+        root.enriched_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: enriched-orders`,
+    bloblangPatterns: ['now()'],
+  },
+
+  {
+    id: 'workflow-dag',
+    name: 'Workflow DAG Processing',
+    description: 'Process messages through a directed acyclic graph of stages',
+    keywords: ['workflow', 'dag', 'pipeline', 'stages', 'dependencies', 'orchestration', 'graph'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['workflow', 'mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-data
+
+pipeline:
+  processors:
+    - workflow:
+        meta_path: workflow_status
+        order:
+          - - parse
+          - - validate
+            - enrich
+          - - transform
+        branches:
+          parse:
+            request_map: 'root = this'
+            processors:
+              - mapping: 'root = this.parse_json()'
+            result_map: 'root.parsed = this'
+          validate:
+            request_map: 'root = this.parsed'
+            processors:
+              - mapping: 'root.valid = this.id != null'
+            result_map: 'root.validation = this'
+          enrich:
+            request_map: 'root = this.parsed'
+            processors:
+              - mapping: 'root.enriched = true'
+            result_map: 'root.enrichment = this'
+          transform:
+            request_map: 'root = this'
+            processors:
+              - mapping: |
+                  root = this.parsed
+                  root.metadata = this.validation.merge(this.enrichment)
+            result_map: 'root = this'
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: processed-data`,
+    bloblangPatterns: ['parse_json()', 'merge()'],
+  },
+
+  {
+    id: 'parallel-enrichment',
+    name: 'Parallel HTTP Enrichment',
+    description: 'Enrich messages from multiple APIs in parallel',
+    keywords: ['parallel', 'enrich', 'http', 'api', 'concurrent', 'lookup', 'multiple', 'sources'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['parallel', 'http', 'mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - users
+
+pipeline:
+  processors:
+    - parallel:
+        cap: 10
+        processors:
+          - branch:
+              request_map: 'root = this.user_id'
+              processors:
+                - http:
+                    url: https://api.example.com/user/\${! this }
+                    verb: GET
+              result_map: 'root.profile = this.parse_json()'
+          - branch:
+              request_map: 'root = this.user_id'
+              processors:
+                - http:
+                    url: https://api.example.com/preferences/\${! this }
+                    verb: GET
+              result_map: 'root.preferences = this.parse_json()'
+    - mapping: |
+        root = this
+        root.enriched_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: enriched-users`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'batch-window-processing',
+    name: 'Batch Window Processing',
+    description: 'Process messages in time-based or count-based windows',
+    keywords: ['batch', 'window', 'time', 'count', 'aggregate', 'group', 'buffer', 'collect'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['aws_s3'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    batching:
+      count: 1000
+      period: 60s
+      processors:
+        - mapping: |
+            root = this.map_each(e -> e.parse_json())
+
+pipeline:
+  processors:
+    - mapping: |
+        root.window_id = uuid_v4()
+        root.events = this
+        root.event_count = this.length()
+        root.window_start = this.index(0).timestamp
+        root.window_end = now()
+
+output:
+  aws_s3:
+    bucket: event-windows
+    path: \${! now().format_timestamp("2006/01/02/15") }/\${! this.window_id }.json`,
+    bloblangPatterns: ['map_each()', 'parse_json()', 'uuid_v4()', 'length()', 'index()', 'now()', 'format_timestamp()'],
+  },
+
+  // ============================================================================
+  // CDC & DATABASE (Additional)
+  // ============================================================================
+  {
+    id: 'postgres-cdc-to-kafka',
+    name: 'PostgreSQL CDC to Kafka',
+    description: 'Stream PostgreSQL changes to Kafka using CDC',
+    keywords: ['postgres', 'postgresql', 'cdc', 'change', 'data', 'capture', 'kafka', 'replication', 'wal'],
+    components: {
+      inputs: ['postgres_cdc'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  postgres_cdc:
+    dsn: postgres://user:pass@localhost:5432/mydb?replication=database
+    slot_name: my_slot
+    tables:
+      - public.orders
+      - public.customers
+
+pipeline:
+  processors:
+    - mapping: |
+        root.table = this.table
+        root.operation = this.operation
+        root.data = this.after
+        root.before = this.before
+        root.timestamp = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: cdc-\${! this.table }`,
+    bloblangPatterns: ['now()'],
+  },
+
+  {
+    id: 'mysql-cdc-to-elasticsearch',
+    name: 'MySQL CDC to Elasticsearch',
+    description: 'Stream MySQL changes to Elasticsearch for search indexing',
+    keywords: ['mysql', 'cdc', 'elasticsearch', 'search', 'index', 'binlog', 'replication', 'sync'],
+    components: {
+      inputs: ['mysql_cdc'],
+      processors: ['mapping'],
+      outputs: ['elasticsearch_v8'],
+    },
+    yaml: `input:
+  mysql_cdc:
+    dsn: user:pass@tcp(localhost:3306)/mydb
+    tables:
+      - products
+    snapshot_mode: initial
+
+pipeline:
+  processors:
+    - mapping: |
+        root = match this.operation {
+          "delete" => {
+            "_op_type": "delete",
+            "_id": this.before.id.string()
+          }
+          _ => {
+            "_id": this.after.id.string(),
+            "name": this.after.name,
+            "description": this.after.description,
+            "price": this.after.price,
+            "updated_at": now()
+          }
+        }
+
+output:
+  elasticsearch_v8:
+    urls:
+      - http://localhost:9200
+    index: products
+    id: \${! this._id }
+    action: \${! this._op_type.or("index") }`,
+    bloblangPatterns: ['match', 'string()', 'now()', 'or()'],
+  },
+
+  {
+    id: 'cockroachdb-changefeed',
+    name: 'CockroachDB Changefeed',
+    description: 'Process CockroachDB changefeed events',
+    keywords: ['cockroachdb', 'changefeed', 'cdc', 'distributed', 'sql', 'streaming', 'change'],
+    components: {
+      inputs: ['cockroachdb_changefeed'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  cockroachdb_changefeed:
+    dsn: postgres://root@localhost:26257/mydb
+    tables:
+      - transactions
+    cursor_cache: file://./cursor.txt
+
+pipeline:
+  processors:
+    - mapping: |
+        root.id = this.key.string()
+        root.payload = this.value
+        root.timestamp = this.updated.string()
+        root.operation = if this.value == null { "delete" } else { "upsert" }
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: transaction-changes`,
+    bloblangPatterns: ['string()', 'if { } else { }'],
+  },
+
+  {
+    id: 'sql-upsert-sync',
+    name: 'SQL Upsert Synchronization',
+    description: 'Upsert data from one database to another',
+    keywords: ['sql', 'upsert', 'sync', 'database', 'insert', 'update', 'replicate', 'postgres', 'mysql'],
+    components: {
+      inputs: ['sql_select'],
+      processors: ['mapping'],
+      outputs: ['sql_raw'],
+    },
+    yaml: `input:
+  sql_select:
+    driver: postgres
+    dsn: postgres://user:pass@source:5432/db
+    table: products
+    columns: ["*"]
+    where: updated_at > NOW() - INTERVAL '1 hour'
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.synced_at = now()
+
+output:
+  sql_raw:
+    driver: postgres
+    dsn: postgres://user:pass@target:5432/db
+    query: |
+      INSERT INTO products (id, name, price, synced_at)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        price = EXCLUDED.price,
+        synced_at = EXCLUDED.synced_at
+    args_mapping: 'root = [this.id, this.name, this.price, this.synced_at]'`,
+    bloblangPatterns: ['now()'],
+  },
+
+  // ============================================================================
+  // AI/ML PIPELINES (Additional)
+  // ============================================================================
+  {
+    id: 'rag-embedding-pipeline',
+    name: 'RAG Embedding Pipeline',
+    description: 'Generate embeddings for RAG applications with chunking',
+    keywords: ['rag', 'embedding', 'vector', 'chunk', 'ai', 'ml', 'retrieval', 'augmented', 'generation'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['text_chunker', 'openai_embeddings', 'mapping'],
+      outputs: ['qdrant'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - documents
+
+pipeline:
+  processors:
+    - mapping: |
+        root.doc_id = this.id
+        root.text = this.content
+    - text_chunker:
+        chunk_size: 512
+        chunk_overlap: 50
+    - openai_embeddings:
+        api_key: \${! env("OPENAI_API_KEY") }
+        model: text-embedding-3-small
+    - mapping: |
+        root.id = uuid_v4()
+        root.doc_id = this.doc_id
+        root.chunk_index = this.chunk_index
+        root.vector = this.embedding
+        root.payload = {
+          "text": this.text,
+          "doc_id": this.doc_id,
+          "chunk_index": this.chunk_index
+        }
+
+output:
+  qdrant:
+    grpc_host: localhost:6334
+    collection: document_chunks`,
+    bloblangPatterns: ['env()', 'uuid_v4()'],
+  },
+
+  {
+    id: 'llm-classification',
+    name: 'LLM Text Classification',
+    description: 'Classify text using LLM with structured output',
+    keywords: ['llm', 'classify', 'classification', 'ai', 'ml', 'openai', 'category', 'label', 'nlp'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['openai_chat_completion', 'mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - support-tickets
+
+pipeline:
+  processors:
+    - mapping: |
+        root.messages = [
+          {
+            "role": "system",
+            "content": "Classify the support ticket. Respond with JSON: {\"category\": \"billing|technical|general\", \"priority\": \"low|medium|high\", \"sentiment\": \"positive|neutral|negative\"}"
+          },
+          {
+            "role": "user",
+            "content": this.content
+          }
+        ]
+    - openai_chat_completion:
+        api_key: \${! env("OPENAI_API_KEY") }
+        model: gpt-4o-mini
+        response_format:
+          type: json_object
+    - mapping: |
+        root.ticket_id = this.ticket_id
+        root.content = this.content
+        root.classification = this.choices.index(0).message.content.parse_json()
+        root.classified_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: classified-tickets`,
+    bloblangPatterns: ['env()', 'index()', 'parse_json()', 'now()'],
+  },
+
+  {
+    id: 'content-moderation',
+    name: 'AI Content Moderation',
+    description: 'Moderate content using OpenAI moderation API',
+    keywords: ['moderation', 'content', 'safety', 'ai', 'openai', 'filter', 'toxic', 'harmful', 'compliance'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['http', 'mapping'],
+      outputs: ['switch'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - user-content
+
+pipeline:
+  processors:
+    - mapping: |
+        root.input = this.content
+    - http:
+        url: https://api.openai.com/v1/moderations
+        verb: POST
+        headers:
+          Authorization: Bearer \${! env("OPENAI_API_KEY") }
+          Content-Type: application/json
+    - mapping: |
+        let result = this.parse_json()
+        root.content_id = this.content_id
+        root.content = this.content
+        root.flagged = $result.results.index(0).flagged
+        root.categories = $result.results.index(0).categories
+        meta flagged = if $result.results.index(0).flagged { "true" } else { "false" }
+
+output:
+  switch:
+    cases:
+      - check: meta("flagged") == "true"
+        output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: flagged-content
+      - output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: approved-content`,
+    bloblangPatterns: ['env()', 'parse_json()', 'index()', 'if { } else { }', 'meta'],
+  },
+
+  {
+    id: 'bedrock-summarization',
+    name: 'AWS Bedrock Summarization',
+    description: 'Summarize documents using AWS Bedrock Claude',
+    keywords: ['bedrock', 'aws', 'summarize', 'summary', 'claude', 'ai', 'ml', 'document', 'text'],
+    components: {
+      inputs: ['aws_s3'],
+      processors: ['aws_bedrock_chat', 'mapping'],
+      outputs: ['aws_s3'],
+    },
+    yaml: `input:
+  aws_s3:
+    bucket: documents
+    prefix: raw/
+
+pipeline:
+  processors:
+    - mapping: |
+        root.messages = [
+          {
+            "role": "user",
+            "content": "Summarize the following document in 3 bullet points:\\n\\n" + this
+          }
+        ]
+    - aws_bedrock_chat:
+        model: anthropic.claude-3-haiku-20240307-v1:0
+        region: us-east-1
+    - mapping: |
+        root.original_key = this.key
+        root.summary = this.choices.index(0).message.content
+        root.summarized_at = now()
+
+output:
+  aws_s3:
+    bucket: documents
+    path: summaries/\${! this.original_key }.json`,
+    bloblangPatterns: ['index()', 'now()'],
+  },
+
+  // ============================================================================
+  // MESSAGING PATTERNS
+  // ============================================================================
+  {
+    id: 'nats-request-reply',
+    name: 'NATS Request-Reply',
+    description: 'Implement request-reply pattern with NATS',
+    keywords: ['nats', 'request', 'reply', 'rpc', 'sync', 'pattern', 'messaging', 'queue'],
+    components: {
+      inputs: ['nats'],
+      processors: ['mapping', 'nats_request_reply'],
+      outputs: ['nats'],
+    },
+    yaml: `input:
+  nats:
+    urls:
+      - nats://localhost:4222
+    subject: requests
+
+pipeline:
+  processors:
+    - mapping: |
+        root.request_id = uuid_v4()
+        root.payload = this.parse_json()
+    - nats_request_reply:
+        urls:
+          - nats://localhost:4222
+        subject: backend.process
+        timeout: 5s
+    - mapping: |
+        root.request_id = this.request_id
+        root.response = this.parse_json()
+        root.completed_at = now()
+
+output:
+  nats:
+    urls:
+      - nats://localhost:4222
+    subject: responses`,
+    bloblangPatterns: ['uuid_v4()', 'parse_json()', 'now()'],
+  },
+
+  {
+    id: 'redis-streams-consumer',
+    name: 'Redis Streams Consumer Group',
+    description: 'Process Redis Streams with consumer groups',
+    keywords: ['redis', 'streams', 'consumer', 'group', 'queue', 'distributed', 'messaging'],
+    components: {
+      inputs: ['redis_streams'],
+      processors: ['mapping'],
+      outputs: ['redis_streams'],
+    },
+    yaml: `input:
+  redis_streams:
+    url: redis://localhost:6379
+    body_key: body
+    streams:
+      - stream: orders:new
+        consumer_group: order-processor
+        consumer_name: worker-1
+        start_from_oldest: true
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed_by = env("HOSTNAME")
+        root.processed_at = now()
+
+output:
+  redis_streams:
+    url: redis://localhost:6379
+    stream: orders:processed
+    max_length: 10000`,
+    bloblangPatterns: ['parse_json()', 'env()', 'now()'],
+  },
+
+  {
+    id: 'sqs-to-sns-fanout',
+    name: 'AWS SQS to SNS Fanout',
+    description: 'Fan out SQS messages to multiple SNS topics',
+    keywords: ['sqs', 'sns', 'aws', 'fanout', 'pubsub', 'broadcast', 'multiple', 'topics'],
+    components: {
+      inputs: ['aws_sqs'],
+      processors: ['mapping'],
+      outputs: ['broker'],
+    },
+    yaml: `input:
+  aws_sqs:
+    url: https://sqs.us-east-1.amazonaws.com/123456789/incoming
+    region: us-east-1
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.distributed_at = now()
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - aws_sns:
+          topic_arn: arn:aws:sns:us-east-1:123456789:notifications
+          region: us-east-1
+      - aws_sns:
+          topic_arn: arn:aws:sns:us-east-1:123456789:analytics
+          region: us-east-1
+      - aws_sns:
+          topic_arn: arn:aws:sns:us-east-1:123456789:archival
+          region: us-east-1`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'pubsub-filtering',
+    name: 'GCP Pub/Sub with Filtering',
+    description: 'Filter and route GCP Pub/Sub messages by attributes',
+    keywords: ['pubsub', 'gcp', 'google', 'filter', 'attributes', 'route', 'cloud', 'messaging'],
+    components: {
+      inputs: ['gcp_pubsub'],
+      processors: ['mapping'],
+      outputs: ['switch'],
+    },
+    yaml: `input:
+  gcp_pubsub:
+    project: my-project
+    subscription: my-subscription
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.event_type = meta("event_type")
+        root.priority = meta("priority").or("normal")
+
+output:
+  switch:
+    cases:
+      - check: this.priority == "high"
+        output:
+          gcp_pubsub:
+            project: my-project
+            topic: high-priority
+      - check: this.event_type == "error"
+        output:
+          gcp_pubsub:
+            project: my-project
+            topic: errors
+      - output:
+          gcp_pubsub:
+            project: my-project
+            topic: standard`,
+    bloblangPatterns: ['parse_json()', 'meta()', 'or()'],
+  },
+
+  // ============================================================================
+  // ADVANCED ROUTING
+  // ============================================================================
+  {
+    id: 'content-based-router',
+    name: 'Content-Based Router',
+    description: 'Route messages based on content fields using switch',
+    keywords: ['router', 'routing', 'switch', 'content', 'based', 'conditional', 'branch', 'dispatch'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['switch'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        let event = this.parse_json()
+        root = $event
+        meta event_type = $event.type
+
+output:
+  switch:
+    cases:
+      - check: meta("event_type") == "order"
+        output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: orders
+      - check: meta("event_type") == "payment"
+        output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: payments
+      - check: meta("event_type") == "shipment"
+        output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: shipments
+      - output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: other-events`,
+    bloblangPatterns: ['parse_json()', 'let', 'meta'],
+  },
+
+  {
+    id: 'multi-output-broker',
+    name: 'Multi-Output Broker',
+    description: 'Write to multiple outputs simultaneously',
+    keywords: ['broker', 'multi', 'output', 'duplicate', 'copy', 'multiple', 'destinations', 'fanout'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['broker'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.replicated_at = now()
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - kafka:
+          addresses:
+            - localhost:9092
+          topic: events-primary
+      - aws_s3:
+          bucket: events-archive
+          path: \${! now().format_timestamp("2006/01/02") }/\${! uuid_v4() }.json
+      - elasticsearch_v8:
+          urls:
+            - http://localhost:9200
+          index: events`,
+    bloblangPatterns: ['parse_json()', 'now()', 'format_timestamp()', 'uuid_v4()'],
+  },
+
+  {
+    id: 'fallback-chain',
+    name: 'Fallback Output Chain',
+    description: 'Try outputs in order until one succeeds',
+    keywords: ['fallback', 'chain', 'backup', 'redundant', 'failover', 'resilience', 'output'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['fallback'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - critical-events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed_at = now()
+
+output:
+  fallback:
+    - http_client:
+        url: https://primary-api.example.com/ingest
+        verb: POST
+        retries: 3
+    - http_client:
+        url: https://secondary-api.example.com/ingest
+        verb: POST
+        retries: 3
+    - aws_s3:
+        bucket: fallback-storage
+        path: failed/\${! uuid_v4() }.json`,
+    bloblangPatterns: ['parse_json()', 'now()', 'uuid_v4()'],
+  },
+
+  {
+    id: 'dynamic-routing',
+    name: 'Dynamic Output Selection',
+    description: 'Dynamically select output based on message content',
+    keywords: ['dynamic', 'routing', 'output', 'select', 'variable', 'destination', 'runtime'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['dynamic'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        let event = this.parse_json()
+        root = $event
+        # Set dynamic output based on region
+        meta output_target = match $event.region {
+          "us" => "kafka_us"
+          "eu" => "kafka_eu"
+          "asia" => "kafka_asia"
+          _ => "kafka_default"
+        }
+
+output:
+  dynamic:
+    outputs:
+      kafka_us:
+        kafka:
+          addresses:
+            - us-kafka:9092
+          topic: regional-events
+      kafka_eu:
+        kafka:
+          addresses:
+            - eu-kafka:9092
+          topic: regional-events
+      kafka_asia:
+        kafka:
+          addresses:
+            - asia-kafka:9092
+          topic: regional-events
+      kafka_default:
+        kafka:
+          addresses:
+            - localhost:9092
+          topic: unrouted-events`,
+    bloblangPatterns: ['parse_json()', 'let', 'match', 'meta'],
+  },
+
+  // ============================================================================
+  // RESOURCE PATTERNS
+  // ============================================================================
+  {
+    id: 'shared-cache',
+    name: 'Shared Cache Pattern',
+    description: 'Use shared cache across processors for deduplication',
+    keywords: ['cache', 'shared', 'dedupe', 'deduplication', 'resource', 'memory', 'redis'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['cache', 'mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - cache:
+        resource: dedupe_cache
+        operator: add
+        key: \${! this.id }
+        value: "1"
+        ttl: 1h
+    - mapping: |
+        root = if errored() {
+          # Already seen this ID, skip
+          deleted()
+        } else {
+          this.parse_json()
+        }
+
+cache_resources:
+  - label: dedupe_cache
+    redis:
+      url: redis://localhost:6379
+      default_ttl: 1h
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: deduplicated-events`,
+    bloblangPatterns: ['errored()', 'deleted()', 'parse_json()'],
+  },
+
+  {
+    id: 'connection-pooling',
+    name: 'HTTP Connection Pooling',
+    description: 'Configure connection pooling for HTTP outputs',
+    keywords: ['connection', 'pool', 'pooling', 'http', 'performance', 'concurrent', 'optimization'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['http_client'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  http_client:
+    url: https://api.example.com/ingest
+    verb: POST
+    headers:
+      Content-Type: application/json
+    max_in_flight: 64
+    batching:
+      count: 100
+      period: 1s
+    timeout: 30s
+    retry_period: 1s
+    max_retry_backoff: 30s
+    retries: 3`,
+    bloblangPatterns: ['parse_json()'],
+  },
 ];
 
 /**
