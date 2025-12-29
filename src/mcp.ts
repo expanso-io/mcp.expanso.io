@@ -53,7 +53,7 @@ interface McpResponse {
 }
 
 // Tool definitions
-const TOOLS = [
+export const TOOLS = [
   {
     name: 'search_docs',
     description:

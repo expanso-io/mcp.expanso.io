@@ -10,17 +10,84 @@ import {
   BLOBLANG_METHODS,
   BLOBLANG_MISSPELLINGS,
 } from './pipeline-validator';
+import { TOOLS } from './mcp';
 
-// We need to test the internal functions, so we'll test through the public interface
-// or export them for testing. For now, test the validator directly.
+// Epic-level tests for MCP Pipeline Building Tools
+describe('Epic: MCP Pipeline Building Tools', () => {
+  const EPIC_TOOLS = [
+    'validate_pipeline',
+    'get_component_schema',
+    'get_bloblang_reference',
+    'suggest_pipeline_pattern',
+    'explain_error',
+    'list_components',
+    'generate_test_data',
+  ];
+
+  describe('tool registration', () => {
+    it('should have all epic tools registered in TOOLS array', () => {
+      const toolNames = TOOLS.map(t => t.name);
+      for (const epicTool of EPIC_TOOLS) {
+        expect(toolNames, `Missing tool: ${epicTool}`).toContain(epicTool);
+      }
+    });
+
+    it('should have complete inputSchema for all epic tools', () => {
+      for (const toolName of EPIC_TOOLS) {
+        const tool = TOOLS.find(t => t.name === toolName);
+        expect(tool, `Tool not found: ${toolName}`).toBeDefined();
+        expect(tool?.inputSchema, `${toolName} missing inputSchema`).toBeDefined();
+        expect(tool?.inputSchema.type, `${toolName} inputSchema missing type`).toBe('object');
+        expect(tool?.inputSchema.properties, `${toolName} missing properties`).toBeDefined();
+      }
+    });
+
+    it('should have descriptions for all epic tools', () => {
+      for (const toolName of EPIC_TOOLS) {
+        const tool = TOOLS.find(t => t.name === toolName);
+        expect(tool?.description, `${toolName} missing description`).toBeTruthy();
+        expect(tool?.description.length, `${toolName} description too short`).toBeGreaterThan(20);
+      }
+    });
+  });
+
+  describe('tools/list MCP response', () => {
+    it('should return all tools when tools/list is called', () => {
+      // This verifies the TOOLS array is properly structured for MCP
+      expect(TOOLS.length).toBeGreaterThanOrEqual(EPIC_TOOLS.length);
+      for (const tool of TOOLS) {
+        expect(tool.name).toBeTruthy();
+        expect(tool.description).toBeTruthy();
+        expect(tool.inputSchema).toBeDefined();
+      }
+    });
+  });
+});
 
 describe('validate_pipeline MCP tool', () => {
   describe('tool registration', () => {
-    // These tests verify the TOOLS array contains validate_pipeline
-    // We'll need to export TOOLS or test via MCP request
-    it.todo('should include validate_pipeline in TOOLS array');
-    it.todo('should have correct inputSchema with required yaml');
-    it.todo('should have include_external as optional boolean');
+    const validateTool = TOOLS.find(t => t.name === 'validate_pipeline');
+
+    it('should include validate_pipeline in TOOLS array', () => {
+      expect(validateTool).toBeDefined();
+      expect(validateTool?.name).toBe('validate_pipeline');
+    });
+
+    it('should have correct inputSchema with required yaml', () => {
+      expect(validateTool?.inputSchema).toBeDefined();
+      expect(validateTool?.inputSchema.type).toBe('object');
+      expect(validateTool?.inputSchema.properties.yaml).toBeDefined();
+      expect(validateTool?.inputSchema.properties.yaml.type).toBe('string');
+      expect(validateTool?.inputSchema.required).toContain('yaml');
+    });
+
+    it('should have include_external as optional boolean', () => {
+      const props = validateTool?.inputSchema.properties;
+      expect(props.include_external).toBeDefined();
+      expect(props.include_external.type).toBe('boolean');
+      // Should NOT be in required array (making it optional)
+      expect(validateTool?.inputSchema.required).not.toContain('include_external');
+    });
   });
 
   describe('valid pipeline handling', () => {
