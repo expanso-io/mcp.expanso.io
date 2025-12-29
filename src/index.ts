@@ -12,12 +12,45 @@ import { trackChat, trackSearch, trackPageView, trackYamlFeedback, trackYamlGene
 import { validatePipelineYaml, formatValidationErrors } from './pipeline-validator';
 import { searchExamples, formatExamplesForContext, getRandomExamples, formatWelcomeExamples } from './examples-registry';
 import { generateComponentsSection, extractComponentsFromYaml } from './docs-links';
+import type { components } from './types/validate-api';
 
-// External Expanso validator
+// Typed external validation using validate.expanso.io API contract
+type ValidateResponse = components['schemas']['ValidateResponse'];
+type Hallucination = components['schemas']['Hallucination'];
+type HallucinationType = components['schemas']['HallucinationType'];
+
 interface ExternalValidationResult {
   valid: boolean;
-  errors: string[];
-  formatted?: string;
+  error_count: number;
+  hallucinations: Hallucination[];
+  formatted_yaml?: string;
+  corrected_yaml?: string;
+}
+
+// Format a hallucination into a human-readable string
+function formatHallucination(h: Hallucination): string {
+  const prefix: Record<HallucinationType, string> = {
+    'IMAGINED_COMPONENT': '❌ Unknown component',
+    'IMAGINED_FIELD': '❌ Unknown field',
+    'IMAGINED_STRUCTURE': '🔧 Wrong structure',
+    'IMAGINED_SYNTAX': '⚠️ Invalid Bloblang',
+    'WRONG_TYPE': '📝 Type error',
+    'DUPLICATE_LABEL': '🏷️ Duplicate label',
+    'UNDEFINED_RESOURCE': '🔗 Missing resource',
+    'UNKNOWN': '❓ Validation error',
+  };
+
+  const icon = prefix[h.category] || '❓';
+  const correction = h.correction ? ` → use "${h.correction}"` : '';
+  const line = h.line ? ` (line ${h.line})` : '';
+  return `${icon}: ${h.message}${correction}${line}`;
+}
+
+// Convert hallucinations to simple error strings for backwards compatibility
+function hallucinationsToErrors(hallucinations: Hallucination[]): string[] {
+  return hallucinations
+    .filter(h => h.severity === 'ERROR')
+    .map(formatHallucination);
 }
 
 async function validateWithExpanso(yaml: string): Promise<ExternalValidationResult> {
@@ -33,38 +66,31 @@ async function validateWithExpanso(yaml: string): Promise<ExternalValidationResu
       const errorText = await response.text();
       return {
         valid: false,
-        errors: [errorText || `Validation failed with status ${response.status}`],
+        error_count: 1,
+        hallucinations: [{
+          category: 'UNKNOWN',
+          severity: 'ERROR',
+          path: 'root',
+          hallucination: 'request_failed',
+          message: errorText || `Validation failed with status ${response.status}`,
+        }],
       };
     }
 
-    const result = await response.json() as Record<string, unknown> | null;
+    // Response is now typed via OpenAPI contract
+    const result: ValidateResponse = await response.json();
 
-    // Handle different response formats
-    if (result && typeof result === 'object') {
-      if ('valid' in result && typeof result.valid === 'boolean') {
-        const errors = Array.isArray(result.errors) ? result.errors as string[] :
-                       Array.isArray(result.issues) ? result.issues as string[] : [];
-        return {
-          valid: result.valid,
-          errors,
-          formatted: typeof result.formatted === 'string' ? result.formatted : undefined,
-        };
-      }
-      // If response has lint_errors or similar
-      if ('lint_errors' in result && Array.isArray(result.lint_errors)) {
-        return {
-          valid: result.lint_errors.length === 0,
-          errors: result.lint_errors as string[],
-        };
-      }
-    }
-
-    // If we got a 200 with no clear error structure, assume valid
-    return { valid: true, errors: [] };
+    return {
+      valid: result.valid,
+      error_count: result.error_count,
+      hallucinations: result.hallucinations,
+      formatted_yaml: result.formatted_yaml,
+      corrected_yaml: result.corrected_yaml,
+    };
   } catch (error) {
     // Network error - don't block, just log
     console.error('External validation error:', error);
-    return { valid: true, errors: [] }; // Fail open on network issues
+    return { valid: true, error_count: 0, hallucinations: [] }; // Fail open on network issues
   }
 }
 
@@ -307,14 +333,21 @@ async function handleValidateApi(
   // Run external Expanso validation
   const externalResult = await validateWithExpanso(body.yaml);
 
-  // Combine results
-  const allErrors: Array<{ path: string; message: string; suggestion?: string } | string> = [
+  // Combine results - include rich hallucination data from external validator
+  const allErrors: Array<{ path: string; message: string; suggestion?: string; category?: string }> = [
     ...localResult.errors.map(e => ({
       path: e.path,
       message: e.message,
       suggestion: e.suggestion,
     })),
-    ...externalResult.errors,
+    ...externalResult.hallucinations
+      .filter(h => h.severity === 'ERROR')
+      .map(h => ({
+        path: h.path,
+        message: h.message,
+        suggestion: h.correction || undefined,
+        category: h.category,
+      })),
   ];
 
   const isValid = localResult.valid && externalResult.valid;
@@ -323,6 +356,7 @@ async function handleValidateApi(
     valid: isValid,
     errors: allErrors,
     warnings: localResult.warnings,
+    hallucinations: externalResult.hallucinations, // Include full hallucination details
   }, headers);
 }
 
@@ -601,12 +635,13 @@ ${context || 'No relevant documentation found for this query.'}`;
         structureErrors,
         bloblangErrors,
         componentErrors,
-        externalErrors: externalResult.errors,
+        hallucinations: externalResult.hallucinations,
       }), { expirationTtl: 60 * 60 * 24 * 90 }) // Keep for 90 days
         .catch(() => {});
     }
 
     // Track to PostHog with categorized errors (non-blocking)
+    const externalErrors = hallucinationsToErrors(externalResult.hallucinations);
     trackYamlGenerated(
       env.POSTHOG_API_KEY,
       distinctId,
@@ -614,7 +649,7 @@ ${context || 'No relevant documentation found for this query.'}`;
       body.message,
       {
         valid: isValid,
-        errors: [...localResult.errors.map(e => `${e.path}: ${e.message}`), ...externalResult.errors],
+        errors: [...localResult.errors.map(e => `${e.path}: ${e.message}`), ...externalErrors],
         warnings: localResult.warnings,
       },
       yamlId
@@ -624,8 +659,8 @@ ${context || 'No relevant documentation found for this query.'}`;
     if (!localResult.valid) {
       validationWarnings.push(formatValidationErrors(localResult));
     }
-    if (!externalResult.valid && externalResult.errors.length > 0) {
-      validationWarnings.push('**Expanso Validation Errors:**\n' + externalResult.errors.map(e => `- ${e}`).join('\n'));
+    if (!externalResult.valid && externalResult.hallucinations.length > 0) {
+      validationWarnings.push('**Expanso Validation Errors:**\n' + externalErrors.map(e => `- ${e}`).join('\n'));
     }
   }
 

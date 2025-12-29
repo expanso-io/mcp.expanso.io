@@ -23,7 +23,7 @@ tail:
 
 # Run TypeScript type checking
 typecheck:
-    tsc --noEmit
+    npx tsc --noEmit
 
 # Re-index content to Vectorize
 index:

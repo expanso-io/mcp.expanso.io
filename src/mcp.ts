@@ -8,6 +8,11 @@
 import type { Env } from './index';
 import { handleSearch, handleListResources, handleReadResource } from './handlers';
 import { validatePipelineYaml } from './pipeline-validator';
+import type { components } from './types/validate-api';
+
+// Typed external validation using validate.expanso.io API contract
+type ValidateResponse = components['schemas']['ValidateResponse'];
+type Hallucination = components['schemas']['Hallucination'];
 import {
   getComponentSchema,
   getSchemasByCategory,
@@ -319,12 +324,21 @@ export const TOOLS = [
 // ============================================================================
 
 /**
+ * External validation result using typed API contract
+ */
+interface ExternalValidationResult {
+  valid: boolean;
+  error_count: number;
+  hallucinations: Hallucination[];
+}
+
+/**
  * Call the external Expanso validator API
  * Fails open on errors (returns valid) to avoid blocking on external service issues
  */
 async function callExternalValidator(
   yaml: string
-): Promise<{ valid: boolean; errors: string[] }> {
+): Promise<ExternalValidationResult> {
   try {
     const response = await fetch('https://validate.expanso.io/validate', {
       method: 'POST',
@@ -336,23 +350,34 @@ async function callExternalValidator(
       // Fail open on server errors
       if (response.status >= 500) {
         console.error('External validator 5xx error:', response.status);
-        return { valid: true, errors: [] };
+        return { valid: true, error_count: 0, hallucinations: [] };
       }
       const text = await response.text();
-      return { valid: false, errors: [text] };
+      return {
+        valid: false,
+        error_count: 1,
+        hallucinations: [{
+          category: 'UNKNOWN',
+          severity: 'ERROR',
+          path: 'root',
+          hallucination: 'request_failed',
+          message: text || `Validation failed with status ${response.status}`,
+        }],
+      };
     }
 
-    const text = await response.text();
-    if (!text || text.trim() === '') {
-      return { valid: true, errors: [] };
-    }
+    // Response is now typed via OpenAPI contract
+    const result: ValidateResponse = await response.json();
 
-    // Parse validation errors from response
-    return { valid: false, errors: text.split('\n').filter(Boolean) };
+    return {
+      valid: result.valid,
+      error_count: result.error_count,
+      hallucinations: result.hallucinations,
+    };
   } catch (error) {
     // Fail open on network errors
     console.error('External validator error:', error);
-    return { valid: true, errors: [] };
+    return { valid: true, error_count: 0, hallucinations: [] };
   }
 }
 
@@ -365,11 +390,13 @@ interface McpValidationResult {
     path: string;
     message: string;
     suggestion?: string;
+    category?: string;
   }>;
   warnings: string[];
   external_validation?: {
     valid: boolean;
-    errors: string[];
+    error_count: number;
+    hallucinations: Hallucination[];
   };
 }
 
@@ -384,15 +411,28 @@ async function validatePipelineForMcp(
   const localResult = validatePipelineYaml(yaml);
 
   // Optionally run external validation
-  let externalResult: { valid: boolean; errors: string[] } | undefined;
+  let externalResult: ExternalValidationResult | undefined;
   if (includeExternal) {
     externalResult = await callExternalValidator(yaml);
   }
 
+  // Combine local and external errors
+  const combinedErrors = [
+    ...localResult.errors,
+    ...(externalResult?.hallucinations
+      .filter(h => h.severity === 'ERROR')
+      .map(h => ({
+        path: h.path,
+        message: h.message,
+        suggestion: h.correction || undefined,
+        category: h.category,
+      })) || []),
+  ];
+
   // Combine results
   return {
     valid: localResult.valid && (externalResult?.valid ?? true),
-    errors: localResult.errors,
+    errors: combinedErrors,
     warnings: localResult.warnings,
     external_validation: externalResult,
   };

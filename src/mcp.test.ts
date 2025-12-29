@@ -75,18 +75,18 @@ describe('validate_pipeline MCP tool', () => {
 
     it('should have correct inputSchema with required yaml', () => {
       expect(validateTool?.inputSchema).toBeDefined();
-      expect(validateTool?.inputSchema.type).toBe('object');
-      expect(validateTool?.inputSchema.properties.yaml).toBeDefined();
-      expect(validateTool?.inputSchema.properties.yaml.type).toBe('string');
-      expect(validateTool?.inputSchema.required).toContain('yaml');
+      expect(validateTool?.inputSchema?.type).toBe('object');
+      expect(validateTool?.inputSchema?.properties?.yaml).toBeDefined();
+      expect(validateTool?.inputSchema?.properties?.yaml?.type).toBe('string');
+      expect(validateTool?.inputSchema?.required).toContain('yaml');
     });
 
     it('should have include_external as optional boolean', () => {
-      const props = validateTool?.inputSchema.properties;
-      expect(props.include_external).toBeDefined();
-      expect(props.include_external.type).toBe('boolean');
+      const props = validateTool?.inputSchema?.properties;
+      expect(props?.include_external).toBeDefined();
+      expect(props?.include_external?.type).toBe('boolean');
       // Should NOT be in required array (making it optional)
-      expect(validateTool?.inputSchema.required).not.toContain('include_external');
+      expect(validateTool?.inputSchema?.required).not.toContain('include_external');
     });
   });
 
