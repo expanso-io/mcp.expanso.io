@@ -9,13 +9,17 @@ default:
 dev:
     wrangler dev
 
-# Deploy worker + re-index content
+# Load .env and deploy worker + re-index content
 deploy:
-    ./scripts/deploy.sh
+    #!/usr/bin/env bash
+    set -a; source .env 2>/dev/null; set +a
+    CLOUDFLARE_API_TOKEN="${CLOUDFLARE_TOKEN_API_MCP_EXPANSO_IO}" ./scripts/deploy.sh
 
-# Deploy worker only (skip indexing)
+# Load .env and deploy worker only (skip indexing)
 deploy-worker:
-    wrangler deploy
+    #!/usr/bin/env bash
+    set -a; source .env 2>/dev/null; set +a
+    CLOUDFLARE_API_TOKEN="${CLOUDFLARE_TOKEN_API_MCP_EXPANSO_IO}" npx wrangler deploy --env=""
 
 # View production logs
 tail:
