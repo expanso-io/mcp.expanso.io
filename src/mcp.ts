@@ -8,6 +8,19 @@
 import type { Env } from './index';
 import { handleSearch, handleListResources, handleReadResource } from './handlers';
 import { validatePipelineYaml } from './pipeline-validator';
+import {
+  getComponentSchema,
+  getSchemasByCategory,
+  listComponentNames,
+  formatComponentSchema,
+  type ComponentCategory,
+} from './component-schemas';
+import {
+  getByCategory,
+  searchBloblang,
+  formatBloblangReference,
+  type BloblangCategory,
+} from './bloblang-reference';
 
 // MCP Protocol types
 interface McpRequest {
@@ -99,6 +112,62 @@ const TOOLS = [
         },
       },
       required: ['yaml'],
+    },
+  },
+  {
+    name: 'get_component_schema',
+    description:
+      'Get the schema for an Expanso pipeline component including field definitions, types, defaults, and examples. Use this to understand what fields a component accepts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        component: {
+          type: 'string',
+          description:
+            'Component name (e.g., kafka, http_server, mapping, aws_s3)',
+        },
+        category: {
+          type: 'string',
+          description: 'Filter by category: input, processor, output',
+          enum: ['input', 'processor', 'output'],
+        },
+        list_only: {
+          type: 'boolean',
+          description: 'If true, only list available component names without full schemas',
+          default: false,
+        },
+      },
+    },
+  },
+  {
+    name: 'get_bloblang_reference',
+    description:
+      'Get Bloblang function and method reference for writing data transformations. Use this to find the correct syntax for Bloblang expressions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        category: {
+          type: 'string',
+          description: 'Category to list functions/methods from',
+          enum: [
+            'functions',
+            'string',
+            'array',
+            'object',
+            'number',
+            'timestamp',
+            'encoding',
+            'parsing',
+            'type',
+            'regex',
+            'all',
+          ],
+        },
+        search: {
+          type: 'string',
+          description: 'Search term to filter by name or description',
+        },
+      },
     },
   },
 ];
@@ -445,6 +514,179 @@ async function handleToolCall(
             {
               type: 'text',
               text: JSON.stringify(result, null, 2),
+            },
+          ],
+        },
+      };
+    }
+
+    case 'get_component_schema': {
+      const componentName = args?.component as string | undefined;
+      const category = args?.category as ComponentCategory | undefined;
+      const listOnly = (args?.list_only as boolean) ?? false;
+
+      // If list_only, just return component names
+      if (listOnly) {
+        const names = listComponentNames(category);
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    components: names,
+                    count: names.length,
+                    category: category || 'all',
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          },
+        };
+      }
+
+      // If component specified, get its schema
+      if (componentName) {
+        const schema = getComponentSchema(componentName);
+        if (!schema) {
+          // Try to find similar components
+          const allNames = listComponentNames();
+          const similar = allNames.filter(
+            (n) =>
+              n.includes(componentName.toLowerCase()) ||
+              componentName.toLowerCase().includes(n)
+          );
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      error: `Unknown component: ${componentName}`,
+                      similar_components: similar.slice(0, 5),
+                      hint: 'Use list_only=true to see all available components',
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+              isError: true,
+            },
+          };
+        }
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: formatComponentSchema(schema),
+              },
+            ],
+          },
+        };
+      }
+
+      // If category specified, get all schemas for that category
+      if (category) {
+        const schemas = getSchemasByCategory(category);
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: schemas.map((s) => formatComponentSchema(s)).join('\n\n---\n\n'),
+              },
+            ],
+          },
+        };
+      }
+
+      // No parameters - return usage info
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  usage:
+                    'Provide component name for specific schema, or category to list schemas, or list_only=true for names',
+                  available_categories: ['input', 'processor', 'output'],
+                  example_components: ['kafka', 'http_server', 'mapping', 'aws_s3'],
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        },
+      };
+    }
+
+    case 'get_bloblang_reference': {
+      const category = args?.category as (BloblangCategory | 'functions' | 'all') | undefined;
+      const search = args?.search as string | undefined;
+
+      let items;
+
+      // If search is provided, use search
+      if (search) {
+        items = searchBloblang(search);
+      } else if (category) {
+        items = getByCategory(category);
+      } else {
+        // Default to all
+        items = getByCategory('all');
+      }
+
+      if (items.length === 0) {
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    results: [],
+                    message: search
+                      ? `No items found matching "${search}"`
+                      : `No items found in category "${category}"`,
+                    hint: 'Try searching for "json", "map", "time", or use category: "all"',
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          },
+        };
+      }
+
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: formatBloblangReference(items),
             },
           ],
         },
