@@ -778,6 +778,44 @@ export function getChatHtml(): string {
       codeEditor.classList.add('error-pulse');
     }
 
+    // Convert technical error messages to user-friendly ones
+    function humanizeError(err) {
+      var category = err.category || '';
+      var path = err.path || '';
+      var hallucination = err.hallucination || '';
+      var correction = err.correction || err.suggestion || '';
+
+      // Extract the field/component name from path (e.g., "input.kafka.brokrs" -> "brokrs")
+      var parts = path.split('.');
+      var fieldName = parts[parts.length - 1] || hallucination;
+
+      // Map categories to user-friendly messages
+      var messages = {
+        'IMAGINED_COMPONENT': 'Unknown component "' + hallucination + '"',
+        'IMAGINED_FIELD': '"' + fieldName + '" is not a valid field',
+        'IMAGINED_STRUCTURE': '"' + fieldName + '" is not valid here',
+        'IMAGINED_SYNTAX': 'Syntax error in "' + fieldName + '"',
+        'WRONG_TYPE': '"' + fieldName + '" has wrong type',
+        'DUPLICATE_LABEL': '"' + fieldName + '" is duplicated',
+        'UNDEFINED_RESOURCE': '"' + hallucination + '" is not defined'
+      };
+
+      var message = messages[category] || err.message || 'Invalid: ' + fieldName;
+
+      // Add suggestion if available
+      var suggestion = null;
+      if (correction) {
+        suggestion = 'Use "' + correction + '" instead';
+      }
+
+      return {
+        message: message,
+        suggestion: suggestion,
+        line: err.line,
+        path: err.path
+      };
+    }
+
     // Display validation errors elegantly
     // first_error is the prioritized error from validator with accurate line number
     function displayErrors(errors, yaml, firstError) {
@@ -796,8 +834,10 @@ export function getChatHtml(): string {
 
       errors.forEach(function(err, idx) {
         var errObj = typeof err === 'string' ? { message: err } : err;
+        // Humanize the error for better display
+        var humanized = humanizeError(errObj);
         // Prefer line from error object, fall back to heuristic
-        var lineNum = errObj.line || findLineFromPath(yaml, errObj.path);
+        var lineNum = humanized.line || errObj.line || findLineFromPath(yaml, errObj.path);
 
         var item = document.createElement('div');
         item.className = 'error-item';
@@ -814,14 +854,14 @@ export function getChatHtml(): string {
         }
 
         var msg = document.createElement('span');
-        msg.textContent = errObj.message || (errObj.path + ': unknown error');
+        msg.textContent = humanized.message;
         row.appendChild(msg);
         item.appendChild(row);
 
-        if (errObj.suggestion) {
+        if (humanized.suggestion) {
           var tip = document.createElement('div');
           tip.className = 'error-suggestion';
-          tip.textContent = '\\u2192 ' + errObj.suggestion;
+          tip.textContent = '\\u2192 ' + humanized.suggestion;
           item.appendChild(tip);
         }
 
