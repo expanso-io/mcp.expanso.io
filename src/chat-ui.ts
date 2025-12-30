@@ -512,6 +512,9 @@ export function getChatHtml(): string {
     let currentCode = '';
     let lastUserMessage = '';
     let feedbackSubmitted = false;
+    // Track validation state for false positive reporting
+    let lastValidationPassed = false;
+    let lastValidatedYaml = '';
 
     // Keep currentCode in sync with textarea edits
     codeEditor.addEventListener('input', function() {
@@ -776,7 +779,8 @@ export function getChatHtml(): string {
     }
 
     // Display validation errors elegantly
-    function displayErrors(errors, yaml) {
+    // first_error is the prioritized error from validator with accurate line number
+    function displayErrors(errors, yaml, firstError) {
       validationResult.innerHTML = '';
       validationResult.className = 'validation-result invalid';
 
@@ -785,9 +789,15 @@ export function getChatHtml(): string {
       header.textContent = '\\u2717 ' + errors.length + ' error' + (errors.length !== 1 ? 's' : '');
       validationResult.appendChild(header);
 
-      errors.forEach(function(err) {
+      // Auto-jump to first error if we have a line number
+      if (firstError && firstError.line) {
+        setTimeout(function() { jumpToLine(firstError.line); }, 100);
+      }
+
+      errors.forEach(function(err, idx) {
         var errObj = typeof err === 'string' ? { message: err } : err;
-        var lineNum = findLineFromPath(yaml, errObj.path);
+        // Prefer line from error object, fall back to heuristic
+        var lineNum = errObj.line || findLineFromPath(yaml, errObj.path);
 
         var item = document.createElement('div');
         item.className = 'error-item';
@@ -850,7 +860,7 @@ export function getChatHtml(): string {
         } else {
           var errors = data.errors || [];
           if (errors.length > 0) {
-            displayErrors(errors, yaml);
+            displayErrors(errors, yaml, data.first_error);
           } else {
             validationResult.className = 'validation-result invalid';
             validationResult.textContent = '\\u2717 Pipeline has validation errors';
@@ -911,8 +921,17 @@ export function getChatHtml(): string {
         if (!isValid && data.validatorResult && !data.validatorResult.valid) {
           var errors = data.validatorResult.errors || [];
           if (errors.length > 0) {
-            displayErrors(errors, currentCode);
+            displayErrors(errors, currentCode, null);
           }
+        }
+
+        // Track if validation passed for false positive reporting
+        if (data.validatorResult && data.validatorResult.valid) {
+          lastValidationPassed = true;
+          lastValidatedYaml = currentCode;
+        } else {
+          lastValidationPassed = false;
+          lastValidatedYaml = '';
         }
 
       } catch (err) {
@@ -930,6 +949,9 @@ export function getChatHtml(): string {
       invalidBtn.classList.remove('submitted');
       validBtn.textContent = 'Yes';
       invalidBtn.textContent = 'No';
+      // Reset validation tracking for false positive reporting
+      lastValidationPassed = false;
+      lastValidatedYaml = '';
     }
 
     function addMessage(content, role, sources) {
@@ -1010,6 +1032,24 @@ export function getChatHtml(): string {
         input.value = '';
         resetChat();
         return;
+      }
+
+      // Report false positive if validation passed but user is regenerating
+      if (lastValidationPassed && lastValidatedYaml) {
+        fetch('https://validate.expanso.io/report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            yaml: lastValidatedYaml,
+            expected_error: 'User regenerated after validation passed',
+            context: 'mcp'
+          })
+        }).catch(function(err) {
+          console.error('Failed to report false positive:', err);
+        });
+        // Reset tracking flags
+        lastValidationPassed = false;
+        lastValidatedYaml = '';
       }
 
       isLoading = true;

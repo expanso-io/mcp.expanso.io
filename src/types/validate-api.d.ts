@@ -137,6 +137,34 @@ export interface components {
             formatted_yaml?: string;
             /** @description List of corrections applied (only if auto_correct=true) */
             corrections_made?: string[];
+            /** @description Summary with first_error (only if summarize=true) */
+            summary?: components["schemas"]["ValidationSummary"];
+        };
+        /** @description Summary of validation results for UI display */
+        ValidationSummary: {
+            /** @description Number of errors found */
+            error_count: number;
+            /** @description Number of warnings found */
+            warning_count: number;
+            /** @description Total issues found */
+            total_count: number;
+            /** @description The highest-priority error for display */
+            first_error?: components["schemas"]["FirstError"];
+            /** @description Top issues for display */
+            top_issues?: string[];
+        };
+        /** @description First/most important error for UI highlighting */
+        FirstError: {
+            /** @description Line number in the YAML */
+            line: number;
+            /** @description Human-readable error message */
+            message: string;
+            /** @description Error category */
+            category: components["schemas"]["HallucinationType"];
+            /** @description The hallucinated/incorrect value */
+            hallucination: string;
+            /** @description Suggested correction */
+            correction?: string;
         };
         /** @description A detected hallucination in the pipeline configuration */
         Hallucination: {

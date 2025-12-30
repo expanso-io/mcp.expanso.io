@@ -19,12 +19,16 @@ type ValidateResponse = components['schemas']['ValidateResponse'];
 type Hallucination = components['schemas']['Hallucination'];
 type HallucinationType = components['schemas']['HallucinationType'];
 
+type ValidationSummary = components['schemas']['ValidationSummary'];
+type FirstError = components['schemas']['FirstError'];
+
 interface ExternalValidationResult {
   valid: boolean;
   error_count: number;
   hallucinations: Hallucination[];
   formatted_yaml?: string;
   corrected_yaml?: string;
+  summary?: ValidationSummary;
 }
 
 // Format a hallucination into a human-readable string
@@ -53,11 +57,14 @@ function hallucinationsToErrors(hallucinations: Hallucination[]): string[] {
     .map(formatHallucination);
 }
 
-async function validateWithExpanso(yaml: string, autoCorrect = false): Promise<ExternalValidationResult> {
+async function validateWithExpanso(yaml: string, options: { autoCorrect?: boolean; summarize?: boolean } = {}): Promise<ExternalValidationResult> {
   try {
-    const url = autoCorrect
-      ? 'https://validate.expanso.io/validate?auto_correct=true'
-      : 'https://validate.expanso.io/validate';
+    const params = new URLSearchParams();
+    if (options.autoCorrect) params.set('auto_correct', 'true');
+    if (options.summarize) params.set('summarize', 'true');
+    const queryString = params.toString();
+    const url = `https://validate.expanso.io/validate${queryString ? '?' + queryString : ''}`;
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
@@ -89,6 +96,7 @@ async function validateWithExpanso(yaml: string, autoCorrect = false): Promise<E
       hallucinations: result.hallucinations,
       formatted_yaml: result.formatted_yaml,
       corrected_yaml: result.corrected_yaml,
+      summary: result.summary,
     };
   } catch (error) {
     // Network error - don't block, just log
@@ -170,7 +178,7 @@ async function validateAndFixYaml(
     attempts++;
 
     // Validate current YAML
-    const result = await validateWithExpanso(currentYaml, true);
+    const result = await validateWithExpanso(currentYaml, { autoCorrect: true });
 
     // If valid, we're done
     if (result.valid) {
@@ -180,7 +188,7 @@ async function validateAndFixYaml(
     // If we have a valid correction from the validator, use it
     if (result.corrected_yaml) {
       // Verify the correction is actually valid
-      const correctionResult = await validateWithExpanso(result.corrected_yaml, false);
+      const correctionResult = await validateWithExpanso(result.corrected_yaml);
       if (correctionResult.valid) {
         return { yaml: result.corrected_yaml, valid: true, attempts, hallucinations: [] };
       }
@@ -205,7 +213,7 @@ async function validateAndFixYaml(
   }
 
   // Max retries reached, do final validation
-  const finalResult = await validateWithExpanso(currentYaml, false);
+  const finalResult = await validateWithExpanso(currentYaml);
   return {
     yaml: currentYaml,
     valid: finalResult.valid,
@@ -513,14 +521,14 @@ async function handleValidateApi(
   // Run local validation
   const localResult = validatePipelineYaml(body.yaml);
 
-  // Run external Expanso validation with auto-correction enabled
-  const externalResult = await validateWithExpanso(body.yaml, true);
+  // Run external Expanso validation with auto-correction and summarize for first_error
+  const externalResult = await validateWithExpanso(body.yaml, { autoCorrect: true, summarize: true });
 
   // Check if we have a corrected version
   const hasCorrectedYaml = !externalResult.valid && !!externalResult.corrected_yaml;
 
   // Combine results - include rich hallucination data from external validator
-  const allErrors: Array<{ path: string; message: string; suggestion?: string; category?: string }> = [
+  const allErrors: Array<{ path: string; message: string; suggestion?: string; category?: string; line?: number }> = [
     ...localResult.errors.map(e => ({
       path: e.path,
       message: e.message,
@@ -533,10 +541,14 @@ async function handleValidateApi(
         message: h.message,
         suggestion: h.correction || undefined,
         category: h.category,
+        line: h.line || undefined,
       })),
   ];
 
   const isValid = localResult.valid && externalResult.valid;
+
+  // Extract first_error for frontend highlighting
+  const firstError = externalResult.summary?.first_error;
 
   return jsonResponse({
     valid: isValid || hasCorrectedYaml, // Consider corrected as "valid enough"
@@ -544,6 +556,7 @@ async function handleValidateApi(
     warnings: localResult.warnings,
     corrected_yaml: hasCorrectedYaml ? externalResult.corrected_yaml : undefined,
     hallucinations: hasCorrectedYaml ? [] : externalResult.hallucinations,
+    first_error: hasCorrectedYaml ? undefined : firstError, // Include for UI line highlighting
   }, headers);
 }
 
