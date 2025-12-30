@@ -158,23 +158,71 @@ export function getChatHtml(): string {
       padding: 0.75rem 1rem;
       border-top: 1px solid var(--border);
       font-size: 0.8rem;
-      max-height: 150px;
+      max-height: 180px;
       overflow-y: auto;
     }
     .validation-result.valid {
       background: rgba(34, 197, 94, 0.1);
-      color: #86efac;
+      border-top: 2px solid #22c55e;
     }
+    .validation-result.valid .validation-icon { color: #22c55e; }
     .validation-result.invalid {
-      background: rgba(239, 68, 68, 0.1);
-      color: #fca5a5;
+      background: rgba(239, 68, 68, 0.05);
+      border-top: 2px solid #ef4444;
     }
-    .validation-result ul {
-      margin: 0.5rem 0 0 1.25rem;
-      padding: 0;
+    .validation-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+      font-size: 0.85rem;
     }
-    .validation-result li {
+    .validation-icon { font-size: 1rem; }
+    .validation-header.valid { color: #86efac; }
+    .validation-header.invalid { color: #fca5a5; }
+    .error-item {
+      display: flex;
+      flex-direction: column;
+      padding: 0.5rem 0.75rem;
       margin: 0.25rem 0;
+      background: rgba(0,0,0,0.2);
+      border-radius: 4px;
+      border-left: 3px solid #ef4444;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .error-item:hover { background: rgba(0,0,0,0.35); }
+    .error-line {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .error-line-num {
+      font-family: 'SF Mono', monospace;
+      font-size: 0.7rem;
+      padding: 0.125rem 0.375rem;
+      background: #ef4444;
+      color: white;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+    .error-message {
+      color: #fca5a5;
+      font-size: 0.8rem;
+    }
+    .error-suggestion {
+      color: #a3a3a3;
+      font-size: 0.75rem;
+      margin-top: 0.25rem;
+      padding-left: 0.5rem;
+      border-left: 2px solid #4b5563;
+    }
+    .error-path {
+      color: #6b7280;
+      font-size: 0.7rem;
+      font-family: 'SF Mono', monospace;
+      margin-top: 0.25rem;
     }
     .validate-btn {
       background: var(--primary) !important;
@@ -684,6 +732,83 @@ export function getChatHtml(): string {
       }
     }
 
+    // Find approximate line number from YAML path like "root.pipeline.processors[0]"
+    function findLineFromPath(yaml, path) {
+      if (!path || !yaml) return null;
+      var lines = yaml.split('\\n');
+      var parts = path.replace(/^root\\.?/, '').split(/[.\\[\\]]+/).filter(Boolean);
+      if (parts.length === 0) return 1;
+      var searchKey = parts[0];
+      for (var i = 0; i < lines.length; i++) {
+        if (lines[i].match(new RegExp('^\\\\s*' + searchKey + '\\\\s*:'))) {
+          if (parts.length > 1) {
+            var nestedKey = parts[parts.length - 1];
+            for (var j = i + 1; j < Math.min(i + 50, lines.length); j++) {
+              if (lines[j].match(new RegExp('^\\\\s*' + nestedKey + '\\\\s*:'))) return j + 1;
+            }
+          }
+          return i + 1;
+        }
+      }
+      return null;
+    }
+
+    // Jump to line in editor
+    function jumpToLine(lineNum) {
+      if (!lineNum) return;
+      var lines = codeEditor.value.split('\\n');
+      var pos = 0;
+      for (var i = 0; i < lineNum - 1 && i < lines.length; i++) pos += lines[i].length + 1;
+      codeEditor.focus();
+      codeEditor.setSelectionRange(pos, pos + (lines[lineNum - 1] || '').length);
+      codeEditor.scrollTop = Math.max(0, (lineNum - 3) * 18);
+    }
+
+    // Display validation errors elegantly
+    function displayErrors(errors, yaml) {
+      validationResult.innerHTML = '';
+      validationResult.className = 'validation-result invalid';
+
+      var header = document.createElement('div');
+      header.className = 'validation-header';
+      header.textContent = '\\u2717 ' + errors.length + ' error' + (errors.length !== 1 ? 's' : '');
+      validationResult.appendChild(header);
+
+      errors.forEach(function(err) {
+        var errObj = typeof err === 'string' ? { message: err } : err;
+        var lineNum = findLineFromPath(yaml, errObj.path);
+
+        var item = document.createElement('div');
+        item.className = 'error-item';
+        if (lineNum) item.onclick = function() { jumpToLine(lineNum); };
+
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:0.5rem;';
+
+        if (lineNum) {
+          var tag = document.createElement('span');
+          tag.className = 'error-line-num';
+          tag.textContent = 'L' + lineNum;
+          row.appendChild(tag);
+        }
+
+        var msg = document.createElement('span');
+        msg.textContent = errObj.message || (errObj.path + ': unknown error');
+        row.appendChild(msg);
+        item.appendChild(row);
+
+        if (errObj.suggestion) {
+          var tip = document.createElement('div');
+          tip.className = 'error-suggestion';
+          tip.textContent = '\\u2192 ' + errObj.suggestion;
+          item.appendChild(tip);
+        }
+
+        validationResult.appendChild(item);
+      });
+      validationResult.style.display = 'block';
+    }
+
     async function validateCode() {
       var yaml = codeEditor.value.trim();
       if (!yaml) {
@@ -705,31 +830,25 @@ export function getChatHtml(): string {
         var data = await res.json();
 
         if (data.valid) {
+          validationResult.innerHTML = '';
           validationResult.className = 'validation-result valid';
-          validationResult.innerHTML = '\\u2713 Pipeline is valid';
+          var header = document.createElement('div');
+          header.className = 'validation-header';
+          header.textContent = '\\u2713 Pipeline is valid';
+          validationResult.appendChild(header);
         } else {
-          validationResult.className = 'validation-result invalid';
           var errors = data.errors || [];
           if (errors.length > 0) {
-            var errorList = document.createElement('ul');
-            errors.forEach(function(err) {
-              var li = document.createElement('li');
-              li.textContent = typeof err === 'string' ? err : (err.path + ': ' + err.message);
-              errorList.appendChild(li);
-            });
-            validationResult.innerHTML = '';
-            var title = document.createElement('strong');
-            title.textContent = '\\u2717 Validation Errors:';
-            validationResult.appendChild(title);
-            validationResult.appendChild(errorList);
+            displayErrors(errors, yaml);
           } else {
+            validationResult.className = 'validation-result invalid';
             validationResult.textContent = '\\u2717 Pipeline has validation errors';
           }
         }
         validationResult.style.display = 'block';
       } catch (err) {
         validationResult.className = 'validation-result invalid';
-        validationResult.textContent = 'Validation request failed: ' + err.message;
+        validationResult.textContent = 'Validation failed: ' + err.message;
         validationResult.style.display = 'block';
       } finally {
         validateBtn.disabled = false;
@@ -777,15 +896,12 @@ export function getChatHtml(): string {
           invalidBtn.textContent = 'Reported';
         }
 
-        // Show validator result if user said invalid and we agree
+        // Show validator errors elegantly if user said invalid and we agree
         if (!isValid && data.validatorResult && !data.validatorResult.valid) {
-          var errorsHtml = data.validatorResult.errors.map(function(e) {
-            return '<div style="color:#fca5a5;font-size:12px;margin-top:8px;">' +
-              e.path + ': ' + e.message +
-              (e.suggestion ? '<br><span style="color:#a3a3a3;">Tip: ' + e.suggestion + '</span>' : '') +
-              '</div>';
-          }).join('');
-          codeContent.innerHTML += errorsHtml;
+          var errors = data.validatorResult.errors || [];
+          if (errors.length > 0) {
+            displayErrors(errors, currentCode);
+          }
         }
 
       } catch (err) {
