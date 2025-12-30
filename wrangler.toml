@@ -24,6 +24,11 @@ index_name = "expanso-docs"
 binding = "CONTENT_CACHE"
 id = "3c147228e7d04ac8926137d8214c2a6c"
 
+# R2 for storing bad YAML feedback (append-only JSONL)
+[[r2_buckets]]
+bucket_name = "mcp-feedback"
+binding = "FEEDBACK_BUCKET"
+
 # Environment variables
 [vars]
 DOCS_DOMAINS = "expanso.io,docs.expanso.io,examples.expanso.io"

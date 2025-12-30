@@ -218,6 +218,7 @@ export interface Env {
   AI: Ai;
   VECTORIZE?: VectorizeIndex; // Optional - requires vectorize:create permission
   CONTENT_CACHE?: KVNamespace; // Optional - requires kv:create permission
+  FEEDBACK_BUCKET?: R2Bucket; // R2 for storing bad YAML feedback
   DOCS_DOMAINS: string;
   POSTHOG_API_KEY: string;
 }
@@ -414,13 +415,14 @@ async function handleYamlFeedbackApi(
     }
   ).catch(() => {});
 
-  // Store bad YAML for later analysis (when user reports invalid)
-  if (!body.isValid && env.CONTENT_CACHE) {
-    const key = `bad-yaml:${Date.now()}`;
+  // Store bad YAML in R2 for later analysis (when user reports invalid)
+  if (!body.isValid && env.FEEDBACK_BUCKET) {
+    const timestamp = new Date().toISOString();
+    const key = `bad-yaml/${timestamp.replace(/[:.]/g, '-')}.json`;
     const record = {
       yaml: body.yaml,
       userMessage: body.userMessage || '',
-      timestamp: new Date().toISOString(),
+      timestamp,
       validatorErrors: validationResult.errors.map(e => ({
         path: e.path,
         message: e.message,
@@ -428,7 +430,7 @@ async function handleYamlFeedbackApi(
       })),
       validatorAgreed: !validationResult.valid,
     };
-    env.CONTENT_CACHE.put(key, JSON.stringify(record)).catch(() => {});
+    env.FEEDBACK_BUCKET.put(key, JSON.stringify(record)).catch(() => {});
   }
 
   return jsonResponse({
@@ -446,7 +448,7 @@ async function handleYamlFeedbackApi(
   }, headers);
 }
 
-// HTTP API: List bad YAML feedback for analysis
+// HTTP API: Get bad YAML feedback as JSONL for batch processing
 async function handleBadYamlApi(
   request: Request,
   env: Env,
@@ -456,40 +458,35 @@ async function handleBadYamlApi(
     return jsonResponse({ error: 'Method not allowed' }, headers, 405);
   }
 
-  if (!env.CONTENT_CACHE) {
-    return jsonResponse({ error: 'KV storage not available' }, headers, 503);
+  if (!env.FEEDBACK_BUCKET) {
+    return jsonResponse({ error: 'R2 storage not available' }, headers, 503);
   }
 
-  // List all bad-yaml keys from KV
-  const list = await env.CONTENT_CACHE.list({ prefix: 'bad-yaml:' });
-  const records: Array<{
-    key: string;
-    yaml: string;
-    userMessage: string;
-    timestamp: string;
-    validatorErrors: Array<{ path: string; message: string; suggestion?: string }>;
-    validatorAgreed: boolean;
-  }> = [];
+  const url = new URL(request.url);
+  const limit = parseInt(url.searchParams.get('limit') || '1000', 10);
 
-  // Fetch each record (limit to 50 most recent)
-  const keys = list.keys.slice(-50);
-  for (const key of keys) {
-    const value = await env.CONTENT_CACHE.get(key.name);
-    if (value) {
-      try {
-        const record = JSON.parse(value);
-        records.push({ key: key.name, ...record });
-      } catch {
-        // Skip malformed records
-      }
+  // List all bad-yaml files from R2
+  const list = await env.FEEDBACK_BUCKET.list({ prefix: 'bad-yaml/' });
+  const keys = list.objects.slice(-limit); // Most recent N
+
+  // Collect records and return as JSONL
+  const lines: string[] = [];
+  for (const obj of keys) {
+    const file = await env.FEEDBACK_BUCKET.get(obj.key);
+    if (file) {
+      const text = await file.text();
+      lines.push(text); // Each file is already a JSON object
     }
   }
 
-  return jsonResponse({
-    count: records.length,
-    total: list.keys.length,
-    records: records.reverse(), // Most recent first
-  }, headers);
+  // Return as JSONL (one JSON object per line)
+  return new Response(lines.join('\n'), {
+    headers: {
+      ...headers,
+      'Content-Type': 'application/x-ndjson',
+      'Content-Disposition': 'attachment; filename="bad-yaml.jsonl"',
+    },
+  });
 }
 
 // HTTP API: Validate YAML with auto-correction
