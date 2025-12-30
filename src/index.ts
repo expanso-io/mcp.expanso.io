@@ -118,35 +118,46 @@ function formatErrorsForFix(hallucinations: Hallucination[]): string {
     .join('\n');
 }
 
+// Check if a correction is a direct replacement (not an instruction or list)
+function isDirectReplacement(correction: string): boolean {
+  if (!correction) return false;
+  // List of options (comma-separated)
+  if (correction.includes(',')) return false;
+  // Truncated list
+  if (correction.includes('...')) return false;
+  // Instruction patterns (starts with verb + space)
+  const instructionPrefixes = ['Remove ', 'Add ', 'Use ', 'Change ', 'Replace ', 'Delete ', 'Move '];
+  if (instructionPrefixes.some(p => correction.startsWith(p))) return false;
+  // Long text is likely an instruction, not a replacement (>60 chars)
+  if (correction.length > 60) return false;
+  // Contains parentheses (likely explanation)
+  if (correction.includes('(') && correction.includes(')')) return false;
+  return true;
+}
+
 // Check if there are uncorrectable errors that need regeneration
-// A correction is only usable if it's a direct replacement, not a list of options
 function hasUncorrectableErrors(hallucinations: Hallucination[]): boolean {
   return hallucinations.some(h => {
     if (h.severity !== 'ERROR') return false;
-    // No correction at all
-    if (!h.correction) return true;
-    // Correction is a list of options (contains comma or "..."), not a direct replacement
-    if (h.correction.includes(',') || h.correction.includes('...')) return true;
+    // No correction or not a direct replacement
+    if (!h.correction || !isDirectReplacement(h.correction)) return true;
     return false;
   });
 }
 
 // Format uncorrectable errors for regeneration prompt
 function formatErrorsForRegeneration(hallucinations: Hallucination[]): string {
-  const uncorrectable = hallucinations.filter(h => {
-    if (h.severity !== 'ERROR') return false;
-    if (!h.correction) return true;
-    if (h.correction.includes(',') || h.correction.includes('...')) return true;
-    return false;
-  });
+  const uncorrectable = hallucinations.filter(h =>
+    h.severity === 'ERROR' && (!h.correction || !isDirectReplacement(h.correction))
+  );
   if (uncorrectable.length === 0) return '';
 
   return uncorrectable
     .map(h => {
       let msg = `- ${h.path}: ${h.message}`;
-      // Include valid options if available
-      if (h.correction && h.correction.includes(',')) {
-        msg += ` (valid options: ${h.correction})`;
+      // Include correction hint if available (even if not auto-applicable)
+      if (h.correction) {
+        msg += ` (hint: ${h.correction})`;
       }
       return msg;
     })
