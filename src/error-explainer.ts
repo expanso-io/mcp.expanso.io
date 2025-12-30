@@ -546,6 +546,101 @@ kafka:
   },
 
   // ============================================================================
+  // Modbus Errors (Industrial Protocol)
+  // ============================================================================
+  {
+    pattern: /modbus.*exception\s*(?:code\s*)?(\d+)|exception\s*(\d+).*modbus|illegal\s+(?:function|data\s+(?:address|value))|slave.*(?:failure|busy)|gateway/i,
+    type: 'connection',
+    explain: (match, context) => {
+      // Extract exception code from the error message
+      const codeMatch = match[0].match(/(?:exception\s*(?:code\s*)?|code\s*)(\d+)/i);
+      const exceptionCode = codeMatch ? parseInt(codeMatch[1], 10) : null;
+
+      // Modbus exception code explanations
+      const exceptionExplanations: Record<number, { name: string; cause: string; fix: string }> = {
+        1: {
+          name: 'Illegal Function',
+          cause: 'The function code is not supported by the slave device.',
+          fix: 'Check your function code (FC). Common: FC1=coils, FC2=discrete inputs, FC3=holding registers, FC4=input registers. Verify your device supports the requested function.',
+        },
+        2: {
+          name: 'Illegal Data Address',
+          cause: 'The register address does not exist on the slave device.',
+          fix: 'Verify register addresses in device documentation. Addresses are often 0-indexed. Some devices use 40001-based addressing for holding registers.',
+        },
+        3: {
+          name: 'Illegal Data Value',
+          cause: 'The value in the query data field is not acceptable to the server.',
+          fix: 'Check: 1) Register count matches data type (FLOAT32 needs 2 registers), 2) Value is within valid range, 3) Byte order/endianness is correct.',
+        },
+        4: {
+          name: 'Slave Device Failure',
+          cause: 'An unrecoverable error occurred on the slave device.',
+          fix: 'Check device status and logs. May need device restart or maintenance.',
+        },
+        5: {
+          name: 'Acknowledge',
+          cause: 'The slave accepted the request but needs time to process.',
+          fix: 'Increase timeout values. The device is processing a long-running operation.',
+        },
+        6: {
+          name: 'Slave Device Busy',
+          cause: 'The slave is busy processing another command.',
+          fix: 'Increase timeBetweenReads or add delays between requests. The device may be overloaded.',
+        },
+        10: {
+          name: 'Gateway Path Unavailable',
+          cause: 'Gateway cannot reach the target device on the network.',
+          fix: 'Check network path and device availability. Verify Slave ID matches target device.',
+        },
+        11: {
+          name: 'Gateway Target Failed to Respond',
+          cause: 'No response from target device through the gateway.',
+          fix: 'Verify Slave ID, check device power and connection, increase timeout.',
+        },
+      };
+
+      const exInfo = exceptionCode !== null ? exceptionExplanations[exceptionCode] : null;
+
+      return {
+        error_type: 'connection' as ErrorType,
+        explanation: exInfo
+          ? `Modbus Exception Code ${exceptionCode}: ${exInfo.name}`
+          : 'Modbus communication error with the device.',
+        cause: exInfo?.cause || 'Configuration mismatch between Benthos and the Modbus device.',
+        fix: {
+          description: exInfo?.fix || 'Verify Modbus configuration matches device specifications',
+          after: `# Modbus troubleshooting checklist:
+input:
+  modbus:
+    controller: tcp://192.168.1.100:502
+    slaveIDs: [1]  # Verify this matches your device
+    timeout: 1s
+    timeBetweenReads: 500ms  # Increase if device is slow
+    addresses:
+      - name: temperature
+        register: holding  # FC3. Use 'input' for FC4
+        address: 0         # Verify in device documentation
+        type: float32      # Must match device data type
+        # byte_order: ABCD  # Try DCBA, BADC, CDAB if values look wrong`,
+        },
+        related_docs: [
+          `${DOCS_BASE}/components/inputs/modbus`,
+          'https://learn.umh.app/course/troubleshooting-modbus-exception-errors-in-benthos-umh-on-umh-platform/',
+        ],
+        common_mistakes: [
+          'Wrong Slave ID (device address)',
+          'Register address off-by-one (0-indexed vs 1-indexed)',
+          'Wrong function code (FC3 vs FC4)',
+          'Data type mismatch (INT16 vs FLOAT32)',
+          'Byte order/endianness incorrect',
+          'Polling too fast for slow devices',
+        ],
+      };
+    },
+  },
+
+  // ============================================================================
   // YAML Syntax Errors
   // ============================================================================
   {

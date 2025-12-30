@@ -225,6 +225,47 @@ describe('Error Explainer', () => {
     });
   });
 
+  describe('Modbus Error Explanations', () => {
+    it('should explain Modbus exception code 3 (Illegal Data Value)', () => {
+      const result = explainError({
+        error_message: 'Modbus exception code 3',
+      });
+
+      expect(result.error_type).toBe('connection');
+      expect(result.explanation).toContain('Exception Code 3');
+      expect(result.explanation).toContain('Illegal Data Value');
+      expect(result.cause).toContain('value');
+      expect(result.common_mistakes).toContain('Wrong Slave ID (device address)');
+    });
+
+    it('should explain Modbus exception code 2 (Illegal Data Address)', () => {
+      const result = explainError({
+        error_message: 'Error: modbus exception 2 on device',
+      });
+
+      expect(result.error_type).toBe('connection');
+      expect(result.explanation).toContain('Illegal Data Address');
+      expect(result.fix.after).toContain('modbus');
+    });
+
+    it('should explain generic Modbus errors without exception code', () => {
+      const result = explainError({
+        error_message: 'Illegal function error from slave device',
+      });
+
+      expect(result.error_type).toBe('connection');
+      expect(result.common_mistakes.some(m => m.includes('Slave ID'))).toBe(true);
+    });
+
+    it('should include Modbus troubleshooting documentation links', () => {
+      const result = explainError({
+        error_message: 'Modbus exception code 1',
+      });
+
+      expect(result.related_docs.some(d => d.includes('modbus'))).toBe(true);
+    });
+  });
+
   describe('YAML Syntax Error Explanations', () => {
     it('should explain YAML indentation errors', () => {
       const result = explainError({

@@ -809,6 +809,13 @@ ${context || 'No relevant documentation found for this query.'}`;
 
   // Add validated component documentation links for any YAML in the response
   if (finalYaml) {
+    // Strip any LLM-generated "Components used" section to avoid duplicates
+    // The LLM sometimes generates its own list, but we want OUR validated one
+    responseText = responseText.replace(
+      /\n*\*?\*?Components used:?\*?\*?:?\n(?:[-•*]\s*(?:Input|Output|Processor|Cache|Rate Limit|Buffer|Metric):[^\n]+\n?)*/gi,
+      ''
+    ).trim();
+
     const componentsSection = generateComponentsSection(finalYaml);
     if (componentsSection) {
       responseText += '\n\n' + componentsSection;
