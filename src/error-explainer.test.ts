@@ -68,6 +68,48 @@ describe('Error Explainer', () => {
     });
   });
 
+  describe('Benthos-UMH Component Detection', () => {
+    it('should detect benthos-umh input components', () => {
+      const result = explainError({
+        error_message: 'Unknown input type: opcua',
+      });
+
+      expect(result.error_type).toBe('validation');
+      expect(result.explanation).toContain('benthos-umh');
+      expect(result.cause).toContain('United Manufacturing Hub');
+      expect(result.related_docs.some(d => d.includes('benthos-umh'))).toBe(true);
+    });
+
+    it('should detect benthos-umh processor components', () => {
+      const result = explainError({
+        error_message: 'Unknown processor type: nodered_js',
+      });
+
+      expect(result.error_type).toBe('validation');
+      expect(result.explanation).toContain('benthos-umh');
+      expect(result.fix.after).toContain('docker pull');
+    });
+
+    it('should detect benthos-umh output components', () => {
+      const result = explainError({
+        error_message: 'Unknown output type: umh_output',
+      });
+
+      expect(result.error_type).toBe('validation');
+      expect(result.explanation).toContain('benthos-umh');
+      expect(result.common_mistakes.some(m => m.includes('fork'))).toBe(true);
+    });
+
+    it('should suggest alternatives for benthos-umh components', () => {
+      const result = explainError({
+        error_message: 'Unknown input type: ethernetip',
+      });
+
+      expect(result.fix.after).toContain('benthos-umh');
+      expect(result.related_docs.some(d => d.includes('umh.app'))).toBe(true);
+    });
+  });
+
   describe('Structure Error Explanations', () => {
     it('should explain missing input section', () => {
       const result = explainError({

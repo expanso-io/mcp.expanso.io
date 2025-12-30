@@ -37,6 +37,27 @@ export interface ExplainOptions {
 // ============================================================================
 
 /**
+ * benthos-umh specific components (not in standard Redpanda Connect)
+ * These are manufacturing-focused extensions from United Manufacturing Hub
+ */
+const BENTHOS_UMH_COMPONENTS = new Set([
+  // Inputs
+  'ethernetip', 'ethernet_ip', 'opcua', 'opc_ua', 'sensorconnect', 'sensor_connect',
+  'modbus_umh', 'umh_input', 'umh_input_opcuasimulator',
+  // Processors
+  'nodered_js', 'node_red_js', 'tag_processor',
+  // Outputs
+  'umh_output',
+]);
+
+/**
+ * Check if a component name is benthos-umh specific
+ */
+function isBenthosUmhComponent(name: string): boolean {
+  return BENTHOS_UMH_COMPONENTS.has(name.toLowerCase().replace(/[-_]/g, '_'));
+}
+
+/**
  * Get all valid component names across all categories
  */
 function getAllComponentNames(): string[] {
@@ -126,6 +147,33 @@ const ERROR_PATTERNS: ErrorPattern[] = [
     type: 'validation',
     explain: (match, context) => {
       const badName = match[1];
+
+      // Check if it's a benthos-umh specific component
+      if (isBenthosUmhComponent(badName)) {
+        return {
+          error_type: 'validation',
+          explanation: `The input type "${badName}" is a benthos-umh extension, not standard Redpanda Connect.`,
+          cause: 'This component is part of the United Manufacturing Hub fork (benthos-umh) which adds manufacturing-specific plugins like OPC-UA, EtherNet/IP, and Modbus support.',
+          fix: {
+            description: 'Use benthos-umh instead of standard Benthos/Redpanda Connect',
+            after: `# To use ${badName}, install benthos-umh:
+docker pull ghcr.io/united-manufacturing-hub/benthos-umh:latest
+
+# Or for standard Benthos, use similar components:
+# - opcua → use http_client with OPC-UA REST gateway
+# - modbus → use socket with custom Bloblang parsing`,
+          },
+          related_docs: [
+            'https://github.com/united-manufacturing-hub/benthos-umh',
+            'https://learn.umh.app/topic/benthos/',
+          ],
+          common_mistakes: [
+            'Using benthos-umh components with standard Benthos',
+            'benthos-umh is a fork, not a plugin - requires separate install',
+          ],
+        };
+      }
+
       const suggestions = findSimilarComponents(badName, 'inputs');
       const bestMatch = suggestions[0] || 'kafka';
 
@@ -157,6 +205,32 @@ const ERROR_PATTERNS: ErrorPattern[] = [
     type: 'validation',
     explain: (match, context) => {
       const badName = match[1];
+
+      // Check if it's a benthos-umh specific component
+      if (isBenthosUmhComponent(badName)) {
+        return {
+          error_type: 'validation',
+          explanation: `The output type "${badName}" is a benthos-umh extension, not standard Redpanda Connect.`,
+          cause: 'This component is part of the United Manufacturing Hub fork (benthos-umh) which adds manufacturing-specific plugins.',
+          fix: {
+            description: 'Use benthos-umh instead of standard Benthos/Redpanda Connect',
+            after: `# To use ${badName}, install benthos-umh:
+docker pull ghcr.io/united-manufacturing-hub/benthos-umh:latest
+
+# Or for standard Benthos, use similar outputs:
+# - umh_output → use kafka or mqtt`,
+          },
+          related_docs: [
+            'https://github.com/united-manufacturing-hub/benthos-umh',
+            'https://learn.umh.app/topic/benthos/',
+          ],
+          common_mistakes: [
+            'Using benthos-umh components with standard Benthos',
+            'benthos-umh is a fork, not a plugin - requires separate install',
+          ],
+        };
+      }
+
       const suggestions = findSimilarComponents(badName, 'outputs');
       const bestMatch = suggestions[0] || 'stdout';
 
@@ -188,6 +262,34 @@ const ERROR_PATTERNS: ErrorPattern[] = [
     type: 'validation',
     explain: (match, context) => {
       const badName = match[1];
+
+      // Check if it's a benthos-umh specific component
+      if (isBenthosUmhComponent(badName)) {
+        return {
+          error_type: 'validation',
+          explanation: `The processor type "${badName}" is a benthos-umh extension, not standard Redpanda Connect.`,
+          cause: 'This component is part of the United Manufacturing Hub fork (benthos-umh) which adds manufacturing-specific processors like nodered_js and tag_processor.',
+          fix: {
+            description: 'Use benthos-umh instead of standard Benthos/Redpanda Connect',
+            after: `# To use ${badName}, install benthos-umh:
+docker pull ghcr.io/united-manufacturing-hub/benthos-umh:latest
+
+# Or for standard Benthos, use similar processors:
+# - nodered_js → use javascript or mapping with custom logic
+# - tag_processor → use mapping for tag transformations`,
+          },
+          related_docs: [
+            'https://github.com/united-manufacturing-hub/benthos-umh',
+            'https://learn.umh.app/topic/benthos/',
+          ],
+          common_mistakes: [
+            'Using benthos-umh processors with standard Benthos',
+            'benthos-umh is a fork, not a plugin - requires separate install',
+            'nodered_js requires Node.js runtime in benthos-umh',
+          ],
+        };
+      }
+
       const suggestions = findSimilarComponents(badName, 'processors');
       const bestMatch = suggestions[0] || 'mapping';
 
