@@ -145,7 +145,7 @@ function hasUncorrectableErrors(hallucinations: Hallucination[]): boolean {
   });
 }
 
-// Format uncorrectable errors for regeneration prompt
+// Format uncorrectable errors for regeneration prompt with category-specific guidance
 function formatErrorsForRegeneration(hallucinations: Hallucination[]): string {
   const uncorrectable = hallucinations.filter(h =>
     h.severity === 'ERROR' && (!h.correction || !isDirectReplacement(h.correction))
@@ -155,10 +155,33 @@ function formatErrorsForRegeneration(hallucinations: Hallucination[]): string {
   return uncorrectable
     .map(h => {
       let msg = `- ${h.path}: ${h.message}`;
-      // Include correction hint if available (even if not auto-applicable)
-      if (h.correction) {
-        msg += ` (hint: ${h.correction})`;
+
+      // Add category-specific actionable guidance
+      switch (h.category) {
+        case 'IMAGINED_FIELD':
+          if (h.correction) {
+            msg += `\n  Valid fields: ${h.correction}`;
+          }
+          break;
+        case 'IMAGINED_COMPONENT':
+          if (h.correction) {
+            msg += ` → use "${h.correction}"`;
+          }
+          break;
+        case 'DUPLICATE_LABEL':
+          msg += '\n  Fix: merge into a single key with array items';
+          break;
+        case 'IMAGINED_STRUCTURE':
+          if (h.correction) {
+            msg += `\n  ${h.correction}`;
+          }
+          break;
+        default:
+          if (h.correction) {
+            msg += ` (${h.correction})`;
+          }
       }
+
       return msg;
     })
     .join('\n');
@@ -952,11 +975,15 @@ ${context || 'No relevant documentation found for this query.'}`;
     });
     messages.push({
       role: 'user',
-      content: `The YAML you generated has errors that cannot be auto-corrected:
+      content: `The YAML has validation errors:
 
 ${uncorrectableErrors}
 
-Please regenerate the pipeline with these issues fixed. Use valid component names and structures.`
+Fix these issues and regenerate a valid pipeline. Key rules:
+- Use only documented field names (check the Reference section above)
+- Don't add fields like max_in_flight, batching, retry_period to outputs
+- Use a single 'processors:' array, not multiple processor keys
+- The 'generate' input uses 'mapping:', not 'kafka:' or other nested configs`
     });
 
     // Regenerate with error context
