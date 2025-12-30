@@ -119,21 +119,37 @@ function formatErrorsForFix(hallucinations: Hallucination[]): string {
 }
 
 // Check if there are uncorrectable errors that need regeneration
+// A correction is only usable if it's a direct replacement, not a list of options
 function hasUncorrectableErrors(hallucinations: Hallucination[]): boolean {
-  return hallucinations.some(h =>
-    h.severity === 'ERROR' && !h.correction
-  );
+  return hallucinations.some(h => {
+    if (h.severity !== 'ERROR') return false;
+    // No correction at all
+    if (!h.correction) return true;
+    // Correction is a list of options (contains comma or "..."), not a direct replacement
+    if (h.correction.includes(',') || h.correction.includes('...')) return true;
+    return false;
+  });
 }
 
 // Format uncorrectable errors for regeneration prompt
 function formatErrorsForRegeneration(hallucinations: Hallucination[]): string {
-  const uncorrectable = hallucinations.filter(h =>
-    h.severity === 'ERROR' && !h.correction
-  );
+  const uncorrectable = hallucinations.filter(h => {
+    if (h.severity !== 'ERROR') return false;
+    if (!h.correction) return true;
+    if (h.correction.includes(',') || h.correction.includes('...')) return true;
+    return false;
+  });
   if (uncorrectable.length === 0) return '';
 
   return uncorrectable
-    .map(h => `- ${h.path}: ${h.message}`)
+    .map(h => {
+      let msg = `- ${h.path}: ${h.message}`;
+      // Include valid options if available
+      if (h.correction && h.correction.includes(',')) {
+        msg += ` (valid options: ${h.correction})`;
+      }
+      return msg;
+    })
     .join('\n');
 }
 
@@ -1022,6 +1038,8 @@ Please regenerate the pipeline with these issues fixed. Use valid component name
         message: h.message,
         suggestion: h.correction || undefined,
         line: h.line,
+        category: h.category,
+        hallucination: h.hallucination,
       })),
     ];
 

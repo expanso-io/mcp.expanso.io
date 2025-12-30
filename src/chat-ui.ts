@@ -791,21 +791,27 @@ export function getChatHtml(): string {
 
       // Map categories to user-friendly messages
       var messages = {
-        'IMAGINED_COMPONENT': 'Unknown component "' + hallucination + '"',
-        'IMAGINED_FIELD': '"' + fieldName + '" is not a valid field',
-        'IMAGINED_STRUCTURE': '"' + fieldName + '" is not valid here',
-        'IMAGINED_SYNTAX': 'Syntax error in "' + fieldName + '"',
-        'WRONG_TYPE': '"' + fieldName + '" has wrong type',
-        'DUPLICATE_LABEL': '"' + fieldName + '" is duplicated',
-        'UNDEFINED_RESOURCE': '"' + hallucination + '" is not defined'
+        'IMAGINED_COMPONENT': 'Unknown component "' + (hallucination || fieldName) + '"',
+        'IMAGINED_FIELD': '"' + (hallucination || fieldName) + '" is not a valid field',
+        'IMAGINED_STRUCTURE': '"' + (hallucination || fieldName) + '" is not valid here',
+        'IMAGINED_SYNTAX': 'Syntax error in "' + (hallucination || fieldName) + '"',
+        'WRONG_TYPE': '"' + (hallucination || fieldName) + '" has wrong type',
+        'DUPLICATE_LABEL': '"' + (hallucination || fieldName) + '" is duplicated',
+        'UNDEFINED_RESOURCE': '"' + (hallucination || fieldName) + '" is not defined'
       };
 
       var message = messages[category] || err.message || 'Invalid: ' + fieldName;
 
-      // Add suggestion if available
+      // Add suggestion if available - format based on whether it's a list or single value
       var suggestion = null;
       if (correction) {
-        suggestion = 'Use "' + correction + '" instead';
+        if (correction.indexOf(',') >= 0) {
+          // List of valid options
+          suggestion = 'Valid options: ' + correction;
+        } else {
+          // Direct replacement
+          suggestion = 'Use "' + correction + '" instead';
+        }
       }
 
       return {
