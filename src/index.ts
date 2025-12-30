@@ -118,6 +118,25 @@ function formatErrorsForFix(hallucinations: Hallucination[]): string {
     .join('\n');
 }
 
+// Check if there are uncorrectable errors that need regeneration
+function hasUncorrectableErrors(hallucinations: Hallucination[]): boolean {
+  return hallucinations.some(h =>
+    h.severity === 'ERROR' && !h.correction
+  );
+}
+
+// Format uncorrectable errors for regeneration prompt
+function formatErrorsForRegeneration(hallucinations: Hallucination[]): string {
+  const uncorrectable = hallucinations.filter(h =>
+    h.severity === 'ERROR' && !h.correction
+  );
+  if (uncorrectable.length === 0) return '';
+
+  return uncorrectable
+    .map(h => `- ${h.path}: ${h.message}`)
+    .join('\n');
+}
+
 // Ask LLM to fix invalid YAML based on validation errors
 async function fixYamlWithLLM(
   env: Env,
@@ -810,6 +829,12 @@ ${context || 'No relevant documentation found for this query.'}`;
   const distinctId = getDistinctId(request);
   let finalYaml = yamlBlocks[0] || ''; // Track the final YAML for component links
 
+  // Track validation state across loop (for last YAML block)
+  let lastFixResult: Awaited<ReturnType<typeof validateAndFixYaml>> | null = null;
+  let lastLocalResult: ReturnType<typeof validatePipelineYaml> | null = null;
+  let lastIsValid = true;
+  let lastWasCorrected = false;
+
   for (const yaml of yamlBlocks) {
     // Generate unique ID for this YAML
     const yamlId = `yaml_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -881,6 +906,69 @@ ${context || 'No relevant documentation found for this query.'}`;
       },
       yamlId
     ).catch(() => {});
+
+    // Store validation state for response (last block wins)
+    lastFixResult = fixResult;
+    lastLocalResult = localResult;
+    lastIsValid = isValid;
+    lastWasCorrected = wasCorrected;
+  }
+
+  // REGENERATION: If there are uncorrectable errors, ask LLM to regenerate with error context
+  if (!lastIsValid && lastFixResult && hasUncorrectableErrors(lastFixResult.hallucinations)) {
+    const uncorrectableErrors = formatErrorsForRegeneration(lastFixResult.hallucinations);
+
+    // Add error feedback as assistant + user messages for context
+    messages.push({
+      role: 'assistant',
+      content: responseText
+    });
+    messages.push({
+      role: 'user',
+      content: `The YAML you generated has errors that cannot be auto-corrected:
+
+${uncorrectableErrors}
+
+Please regenerate the pipeline with these issues fixed. Use valid component names and structures.`
+    });
+
+    // Regenerate with error context
+    const regenResponse = await (env.AI.run as Function)('@cf/meta/llama-3.1-8b-instruct-fast', {
+      messages,
+      max_tokens: 768,
+    });
+
+    const regenText = (regenResponse as { response: string }).response;
+    const regenYamlBlocks = findYamlInResponse(regenText);
+
+    // If we got YAML, validate and use if better
+    if (regenYamlBlocks.length > 0) {
+      const regenYaml = regenYamlBlocks[0];
+      const regenResult = await validateWithExpanso(regenYaml, { autoCorrect: true });
+      const regenLocalResult = validatePipelineYaml(regenResult.corrected_yaml || regenYaml);
+
+      const regenIsValid = regenResult.valid && regenLocalResult.valid;
+
+      // Use regenerated response if it's valid or has fewer/no uncorrectable errors
+      if (regenIsValid || !hasUncorrectableErrors(regenResult.hallucinations)) {
+        responseText = regenText;
+        finalYaml = regenResult.corrected_yaml || regenYaml;
+        lastIsValid = regenIsValid;
+        lastFixResult = {
+          yaml: finalYaml,
+          valid: regenResult.valid,
+          attempts: 1,
+          hallucinations: regenResult.hallucinations
+        };
+        lastLocalResult = regenLocalResult;
+        lastWasCorrected = !!regenResult.corrected_yaml;
+
+        // Replace YAML in response if it was corrected
+        if (regenResult.corrected_yaml) {
+          responseText = replaceYamlInResponse(responseText, regenYaml, regenResult.corrected_yaml);
+        }
+      }
+    }
   }
 
   // Add validated component documentation links for any YAML in the response
@@ -907,10 +995,44 @@ ${context || 'No relevant documentation found for this query.'}`;
     sources.length
   ).catch(() => {});
 
-  return jsonResponse({
+  // Build response with validation info when we have YAML
+  const chatResponse: {
+    response: string;
+    sources: Array<{ title: string; url: string }>;
+    validation?: {
+      valid: boolean;
+      errors: Array<{ path: string; message: string; suggestion?: string; line?: number }>;
+      was_corrected: boolean;
+    };
+  } = {
     response: responseText,
     sources,
-  }, headers);
+  };
+
+  // Include validation errors if YAML was generated but has unfixed issues
+  if (finalYaml && !lastIsValid && lastLocalResult && lastFixResult) {
+    const allErrors = [
+      ...lastLocalResult.errors.map(e => ({
+        path: e.path,
+        message: e.message,
+        suggestion: e.suggestion,
+      })),
+      ...lastFixResult.hallucinations.map(h => ({
+        path: h.path,
+        message: h.message,
+        suggestion: h.correction || undefined,
+        line: h.line,
+      })),
+    ];
+
+    chatResponse.validation = {
+      valid: false,
+      errors: allErrors,
+      was_corrected: lastWasCorrected,
+    };
+  }
+
+  return jsonResponse(chatResponse, headers);
 }
 
 // MCP discovery document

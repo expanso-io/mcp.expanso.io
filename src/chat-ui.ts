@@ -1083,6 +1083,14 @@ export function getChatHtml(): string {
           addMessage(data.response, 'assistant', data.sources || []);
           history.push({ role: 'user', content: message });
           history.push({ role: 'assistant', content: data.response });
+
+          // If backend couldn't auto-correct, show validation errors
+          if (data.validation && !data.validation.valid && data.validation.errors.length > 0) {
+            var yaml = extractYaml(data.response);
+            var firstError = data.validation.errors[0];
+            displayErrors(data.validation.errors, yaml, firstError);
+            validationResult.style.display = 'block';
+          }
         }
       } catch (err) {
         removeLoading();
