@@ -280,6 +280,9 @@ export default {
         case '/api/yaml-feedback':
           return handleYamlFeedbackApi(request, env, corsHeaders);
 
+        case '/api/bad-yaml':
+          return handleBadYamlApi(request, env, corsHeaders);
+
         case '/api/yaml-export':
           return handleYamlExportApi(request, env, corsHeaders);
 
@@ -411,6 +414,25 @@ async function handleYamlFeedbackApi(
     }
   ).catch(() => {});
 
+  // Store bad YAML for later analysis (when user reports invalid)
+  if (!body.isValid && env.CONTENT_CACHE) {
+    const key = `bad-yaml:${Date.now()}`;
+    const record = {
+      yaml: body.yaml,
+      userMessage: body.userMessage || '',
+      timestamp: new Date().toISOString(),
+      validatorErrors: validationResult.errors.map(e => ({
+        path: e.path,
+        message: e.message,
+        suggestion: e.suggestion,
+      })),
+      validatorAgreed: !validationResult.valid,
+    };
+    env.CONTENT_CACHE.put(key, JSON.stringify(record), {
+      expirationTtl: 60 * 60 * 24 * 30, // Keep for 30 days
+    }).catch(() => {});
+  }
+
   return jsonResponse({
     received: true,
     userReportedValid: body.isValid,
@@ -423,6 +445,52 @@ async function handleYamlFeedbackApi(
         suggestion: e.suggestion,
       })),
     },
+  }, headers);
+}
+
+// HTTP API: List bad YAML feedback for analysis
+async function handleBadYamlApi(
+  request: Request,
+  env: Env,
+  headers: Record<string, string>
+): Promise<Response> {
+  if (request.method !== 'GET') {
+    return jsonResponse({ error: 'Method not allowed' }, headers, 405);
+  }
+
+  if (!env.CONTENT_CACHE) {
+    return jsonResponse({ error: 'KV storage not available' }, headers, 503);
+  }
+
+  // List all bad-yaml keys from KV
+  const list = await env.CONTENT_CACHE.list({ prefix: 'bad-yaml:' });
+  const records: Array<{
+    key: string;
+    yaml: string;
+    userMessage: string;
+    timestamp: string;
+    validatorErrors: Array<{ path: string; message: string; suggestion?: string }>;
+    validatorAgreed: boolean;
+  }> = [];
+
+  // Fetch each record (limit to 50 most recent)
+  const keys = list.keys.slice(-50);
+  for (const key of keys) {
+    const value = await env.CONTENT_CACHE.get(key.name);
+    if (value) {
+      try {
+        const record = JSON.parse(value);
+        records.push({ key: key.name, ...record });
+      } catch {
+        // Skip malformed records
+      }
+    }
+  }
+
+  return jsonResponse({
+    count: records.length,
+    total: list.keys.length,
+    records: records.reverse(), // Most recent first
   }, headers);
 }
 

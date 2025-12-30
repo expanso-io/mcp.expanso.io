@@ -154,6 +154,13 @@ export function getChatHtml(): string {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-style: italic;
     }
+    .code-editor.error-pulse {
+      animation: errorPulse 0.6s ease-out;
+    }
+    @keyframes errorPulse {
+      0% { box-shadow: inset 0 0 0 3px #ef4444; background: rgba(239, 68, 68, 0.15); }
+      100% { box-shadow: none; background: transparent; }
+    }
     .validation-result {
       padding: 0.75rem 1rem;
       border-top: 1px solid var(--border);
@@ -753,7 +760,7 @@ export function getChatHtml(): string {
       return null;
     }
 
-    // Jump to line in editor
+    // Jump to line in editor with visual pulse
     function jumpToLine(lineNum) {
       if (!lineNum) return;
       var lines = codeEditor.value.split('\\n');
@@ -762,6 +769,10 @@ export function getChatHtml(): string {
       codeEditor.focus();
       codeEditor.setSelectionRange(pos, pos + (lines[lineNum - 1] || '').length);
       codeEditor.scrollTop = Math.max(0, (lineNum - 3) * 18);
+      // Trigger visual pulse
+      codeEditor.classList.remove('error-pulse');
+      void codeEditor.offsetWidth; // Force reflow
+      codeEditor.classList.add('error-pulse');
     }
 
     // Display validation errors elegantly
