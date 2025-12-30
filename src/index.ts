@@ -964,23 +964,31 @@ ${context || 'No relevant documentation found for this query.'}`;
     lastWasCorrected = wasCorrected;
   }
 
-  // REGENERATION: If there are uncorrectable errors, ask LLM to regenerate with error context
-  if (!lastIsValid && lastFixResult && hasUncorrectableErrors(lastFixResult.hallucinations)) {
+  // REGENERATION LOOP: Keep regenerating until YAML passes validation
+  // For prompt-generated YAML, we MUST return valid output or no YAML at all
+  const MAX_REGEN_ATTEMPTS = 3;
+  let regenAttempts = 0;
+
+  while (!lastIsValid && lastFixResult && hasUncorrectableErrors(lastFixResult.hallucinations) && regenAttempts < MAX_REGEN_ATTEMPTS) {
+    regenAttempts++;
     const uncorrectableErrors = formatErrorsForRegeneration(lastFixResult.hallucinations);
 
     // Add error feedback as assistant + user messages for context
-    messages.push({
-      role: 'assistant',
-      content: responseText
-    });
+    // On first attempt, add the original response; on subsequent, add the failed regen
+    if (regenAttempts === 1) {
+      messages.push({
+        role: 'assistant',
+        content: responseText
+      });
+    }
     messages.push({
       role: 'user',
-      content: `The YAML has validation errors:
+      content: `${regenAttempts > 1 ? `Attempt ${regenAttempts}: Still has errors.\n\n` : ''}The YAML has validation errors:
 
 ${uncorrectableErrors}
 
 Fix these issues and regenerate a valid pipeline. Key rules:
-- Use only documented field names (check the Reference section above)
+- Use only documented field names (check the Valid fields lists above)
 - Don't add fields like max_in_flight, batching, retry_period to outputs
 - Use a single 'processors:' array, not multiple processor keys
 - The 'generate' input uses 'mapping:', not 'kafka:' or other nested configs`
@@ -995,7 +1003,7 @@ Fix these issues and regenerate a valid pipeline. Key rules:
     const regenText = (regenResponse as { response: string }).response;
     const regenYamlBlocks = findYamlInResponse(regenText);
 
-    // If we got YAML, validate and use if better
+    // If we got YAML, validate it
     if (regenYamlBlocks.length > 0) {
       const regenYaml = regenYamlBlocks[0];
       const regenResult = await validateWithExpanso(regenYaml, { autoCorrect: true });
@@ -1003,26 +1011,46 @@ Fix these issues and regenerate a valid pipeline. Key rules:
 
       const regenIsValid = regenResult.valid && regenLocalResult.valid;
 
-      // Use regenerated response if it's valid or has fewer/no uncorrectable errors
-      if (regenIsValid || !hasUncorrectableErrors(regenResult.hallucinations)) {
-        responseText = regenText;
-        finalYaml = regenResult.corrected_yaml || regenYaml;
-        lastIsValid = regenIsValid;
-        lastFixResult = {
-          yaml: finalYaml,
-          valid: regenResult.valid,
-          attempts: 1,
-          hallucinations: regenResult.hallucinations
-        };
-        lastLocalResult = regenLocalResult;
-        lastWasCorrected = !!regenResult.corrected_yaml;
+      // Always update state with regenerated content
+      responseText = regenText;
+      finalYaml = regenResult.corrected_yaml || regenYaml;
+      lastIsValid = regenIsValid;
+      lastFixResult = {
+        yaml: finalYaml,
+        valid: regenResult.valid,
+        attempts: regenAttempts,
+        hallucinations: regenResult.hallucinations
+      };
+      lastLocalResult = regenLocalResult;
+      lastWasCorrected = !!regenResult.corrected_yaml;
 
-        // Replace YAML in response if it was corrected
-        if (regenResult.corrected_yaml) {
-          responseText = replaceYamlInResponse(responseText, regenYaml, regenResult.corrected_yaml);
-        }
+      // Replace YAML in response if it was corrected
+      if (regenResult.corrected_yaml) {
+        responseText = replaceYamlInResponse(responseText, regenYaml, regenResult.corrected_yaml);
       }
+
+      // Add assistant response to messages for next iteration context
+      messages.push({
+        role: 'assistant',
+        content: regenText
+      });
+
+      // If valid, break out of loop
+      if (regenIsValid || !hasUncorrectableErrors(regenResult.hallucinations)) {
+        break;
+      }
+    } else {
+      // No YAML in response - can't continue
+      break;
     }
+  }
+
+  // If still invalid after all attempts, strip YAML from response to avoid showing broken output
+  if (!lastIsValid && lastFixResult && hasUncorrectableErrors(lastFixResult.hallucinations)) {
+    // Remove YAML blocks from response
+    responseText = responseText.replace(/```ya?ml[\s\S]*?```/gi, '').trim();
+    finalYaml = ''; // Clear the final YAML
+    responseText += '\n\n*Note: I was unable to generate a fully valid pipeline configuration. Please try rephrasing your request or ask for a simpler pipeline.*';
   }
 
   // Add validated component documentation links for any YAML in the response
