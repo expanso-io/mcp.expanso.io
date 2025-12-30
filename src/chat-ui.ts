@@ -802,14 +802,31 @@ export function getChatHtml(): string {
 
       var message = messages[category] || err.message || 'Invalid: ' + fieldName;
 
-      // Add suggestion if available - format based on whether it's a list or single value
+      // Add suggestion if available - format appropriately based on content
       var suggestion = null;
       if (correction) {
-        if (correction.indexOf(',') >= 0) {
-          // List of valid options
-          suggestion = 'Valid options: ' + correction;
+        // Check what kind of correction this is
+        var isListOfOptions = correction.indexOf(',') >= 0;
+        var isInstruction = /^(Remove |Add |Use |Change |Replace |Delete |Move )/.test(correction);
+        var hasExplanation = correction.indexOf('(') >= 0 && correction.indexOf(')') >= 0;
+        var isTruncated = correction.indexOf('...') >= 0;
+        var isLong = correction.length > 60;
+
+        if (isListOfOptions || isTruncated) {
+          // List of valid options - truncate if too long
+          var optionsList = correction.length > 100
+            ? correction.substring(0, 100) + '...'
+            : correction;
+          suggestion = 'Valid options: ' + optionsList;
+        } else if (isInstruction || isLong) {
+          // Show instruction as-is, it's already actionable
+          suggestion = correction;
+        } else if (hasExplanation) {
+          // Has explanation in parens - extract just the field name
+          var fieldOnly = correction.split('(')[0].trim();
+          suggestion = fieldOnly ? 'Use "' + fieldOnly + '"' : correction;
         } else {
-          // Direct replacement
+          // Simple direct replacement
           suggestion = 'Use "' + correction + '" instead';
         }
       }
