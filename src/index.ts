@@ -97,11 +97,26 @@ async function validateWithExpanso(yaml: string, autoCorrect = false): Promise<E
   }
 }
 
+// Filter out known false positives from external validator
+function filterFalsePositives(hallucinations: Hallucination[]): Hallucination[] {
+  return hallucinations.filter(h => {
+    // False positive: env() with quotes is flagged as needing quotes
+    // The validator says "Use env("VAR_NAME") with quotes" but the code already has quotes
+    if (h.hallucination === 'env' &&
+        h.message?.includes('quotes') &&
+        h.correction === 'env("VAR_NAME")') {
+      return false; // Filter out this false positive
+    }
+    return true;
+  });
+}
+
 // Format validation errors for LLM to fix
 function formatErrorsForFix(hallucinations: Hallucination[]): string {
-  if (hallucinations.length === 0) return '';
+  const filtered = filterFalsePositives(hallucinations);
+  if (filtered.length === 0) return '';
 
-  return hallucinations
+  return filtered
     .filter(h => h.severity === 'ERROR')
     .map(h => {
       const correction = h.correction ? ` → Use: ${h.correction}` : '';
@@ -172,8 +187,12 @@ async function validateAndFixYaml(
     // Validate current YAML
     const result = await validateWithExpanso(currentYaml, true);
 
-    // If valid, we're done
-    if (result.valid) {
+    // Filter out known false positives
+    const realErrors = filterFalsePositives(result.hallucinations);
+    const hasRealErrors = realErrors.some(h => h.severity === 'ERROR');
+
+    // If valid or only false positives remain, we're done
+    if (result.valid || !hasRealErrors) {
       return { yaml: currentYaml, valid: true, attempts, hallucinations: [] };
     }
 
@@ -181,7 +200,8 @@ async function validateAndFixYaml(
     if (result.corrected_yaml) {
       // Verify the correction is actually valid
       const correctionResult = await validateWithExpanso(result.corrected_yaml, false);
-      if (correctionResult.valid) {
+      const correctionRealErrors = filterFalsePositives(correctionResult.hallucinations);
+      if (correctionResult.valid || !correctionRealErrors.some(h => h.severity === 'ERROR')) {
         return { yaml: result.corrected_yaml, valid: true, attempts, hallucinations: [] };
       }
       // Correction was bad, fall through to LLM fix
@@ -190,8 +210,8 @@ async function validateAndFixYaml(
     // No valid correction, ask LLM to fix
     const errorText = formatErrorsForFix(result.hallucinations);
     if (!errorText) {
-      // No actionable errors, return as-is
-      return { yaml: currentYaml, valid: false, attempts, hallucinations: result.hallucinations };
+      // No actionable errors (all filtered), return as valid
+      return { yaml: currentYaml, valid: true, attempts, hallucinations: [] };
     }
 
     const fixedYaml = await fixYamlWithLLM(env, currentYaml, errorText, userRequest);
