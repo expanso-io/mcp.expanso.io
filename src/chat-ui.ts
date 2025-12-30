@@ -731,14 +731,58 @@ export function getChatHtml(): string {
       sendMessage({ preventDefault: function() {} });
     }
 
-    function updateCodePanel(yaml) {
+    function updateCodePanel(yaml, wasCorrected) {
       if (yaml) {
         currentCode = yaml;
         codeEditor.value = yaml;
         feedbackButtons.style.display = 'flex';
-        validationResult.style.display = 'none';
         resetFeedback();
         showFollowUpSuggestions(yaml);
+
+        // Show notice if yaml was auto-corrected
+        if (wasCorrected) {
+          validationResult.className = 'validation-result valid';
+          // Clear previous content using DOM methods
+          while (validationResult.firstChild) {
+            validationResult.removeChild(validationResult.firstChild);
+          }
+          var header = document.createElement('div');
+          header.className = 'validation-header';
+          header.textContent = '\\u2713 Auto-corrected hallucinations';
+          validationResult.appendChild(header);
+          var details = document.createElement('div');
+          details.textContent = 'The generated YAML had errors that were automatically fixed.';
+          details.style.fontSize = '12px';
+          details.style.opacity = '0.8';
+          validationResult.appendChild(details);
+          validationResult.style.display = 'block';
+        } else {
+          validationResult.style.display = 'none';
+        }
+      }
+    }
+
+    // Auto-validate YAML and apply corrections before display
+    async function autoValidateAndFix(yaml) {
+      try {
+        var res = await fetch('/api/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ yaml: yaml })
+        });
+        var data = await res.json();
+
+        // If we have a corrected version, use it
+        if (!data.valid && data.corrected_yaml) {
+          return { yaml: data.corrected_yaml, wasCorrected: true };
+        }
+
+        // Return original yaml (validation result shown on click)
+        return { yaml: yaml, wasCorrected: false };
+      } catch (err) {
+        // On error, just use original yaml
+        console.error('Auto-validation failed:', err);
+        return { yaml: yaml, wasCorrected: false };
       }
     }
 
@@ -954,7 +998,7 @@ export function getChatHtml(): string {
       lastValidatedYaml = '';
     }
 
-    function addMessage(content, role, sources) {
+    async function addMessage(content, role, sources) {
       const welcome = document.getElementById('welcome');
       if (welcome) welcome.remove();
 
@@ -962,7 +1006,9 @@ export function getChatHtml(): string {
       if (role === 'assistant') {
         var yaml = extractYaml(content);
         if (yaml) {
-          updateCodePanel(yaml);
+          // Auto-validate and fix hallucinations before display
+          var result = await autoValidateAndFix(yaml);
+          updateCodePanel(result.yaml, result.wasCorrected);
           displayContent = removeCodeBlocks(content);
         }
       }
@@ -1078,15 +1124,15 @@ export function getChatHtml(): string {
         removeLoading();
 
         if (data.error) {
-          addMessage('Error: ' + data.error, 'assistant', []);
+          await addMessage('Error: ' + data.error, 'assistant', []);
         } else {
-          addMessage(data.response, 'assistant', data.sources || []);
+          await addMessage(data.response, 'assistant', data.sources || []);
           history.push({ role: 'user', content: message });
           history.push({ role: 'assistant', content: data.response });
         }
       } catch (err) {
         removeLoading();
-        addMessage('Sorry, something went wrong. Please try again.', 'assistant', []);
+        await addMessage('Sorry, something went wrong. Please try again.', 'assistant', []);
       }
 
       isLoading = false;
