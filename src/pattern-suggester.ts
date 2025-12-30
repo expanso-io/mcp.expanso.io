@@ -77,8 +77,11 @@ const CONCEPT_TO_COMPONENTS: Record<string, string[]> = {
 
   // Patterns
   retry: ['retry'],
+  backoff: ['retry'], // backoff implies retry pattern
   error: ['catch', 'try', 'retry'],
   fallback: ['try', 'catch', 'fallback'],
+  resilience: ['retry', 'try', 'catch'],
+  recover: ['retry', 'try', 'catch'],
   parallel: ['workflow', 'branch', 'parallel'],
   workflow: ['workflow', 'branch'],
   split: ['unarchive', 'split'],
@@ -206,7 +209,8 @@ function extractIntent(useCase: string): ExtractedIntent {
 
   // Extract transformation concepts
   const transformWords = ['parse', 'filter', 'enrich', 'validate', 'transform', 'convert',
-    'aggregate', 'batch', 'dedupe', 'retry', 'split', 'merge', 'route', 'capture', 'changes', 'change'];
+    'aggregate', 'batch', 'dedupe', 'retry', 'split', 'merge', 'route', 'capture', 'changes', 'change',
+    'backoff', 'error', 'fallback', 'recover', 'resilience', 'cdc', 'replication'];
   for (const word of words) {
     if (transformWords.includes(word)) {
       transformation_concepts.push(word);
@@ -328,6 +332,19 @@ function scoreExample(
   const exampleKeywords = example.keywords.map((k) => k.toLowerCase());
   const descWords = example.description.toLowerCase().split(/\s+/);
   const allExampleTerms = [...exampleKeywords, ...descWords];
+
+  // Direct keyword match: boost examples whose keywords directly match query concepts
+  const allConcepts = [
+    ...intent.source_concepts,
+    ...intent.destination_concepts,
+    ...intent.transformation_concepts,
+  ];
+  for (const concept of allConcepts) {
+    if (exampleKeywords.includes(concept)) {
+      score += 0.25; // Strong boost for direct keyword match
+      matchReasons.push(`Direct match on "${concept}"`);
+    }
+  }
 
   for (const category of intent.matched_categories) {
     const categoryKeywords = INTENT_CATEGORIES[category];
