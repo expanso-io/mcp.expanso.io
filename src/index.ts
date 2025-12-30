@@ -428,9 +428,7 @@ async function handleYamlFeedbackApi(
       })),
       validatorAgreed: !validationResult.valid,
     };
-    env.CONTENT_CACHE.put(key, JSON.stringify(record), {
-      expirationTtl: 60 * 60 * 24 * 30, // Keep for 30 days
-    }).catch(() => {});
+    env.CONTENT_CACHE.put(key, JSON.stringify(record)).catch(() => {});
   }
 
   return jsonResponse({
