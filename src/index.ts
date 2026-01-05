@@ -829,6 +829,21 @@ COMMON COMPONENTS:
 - Print to console: use "stdout: {}" (no extra fields needed)
   stdout: {} - NEVER use "stdout: format:" or "stdout: output:"
 
+AGGREGATION/BATCHING PATTERNS:
+- Use kafka input with batching: { count: 100, period: 10s }
+- For windowed aggregation, batch at input level, then use mapping to aggregate
+- Example aggregation:
+  input:
+    kafka: { addresses: [localhost:9092], topics: [events], batching: { count: 100, period: 10s } }
+  pipeline:
+    processors:
+      - mapping: |
+          root.batch_id = uuid_v4()
+          root.events = this.map_each(e -> e.parse_json())
+          root.count = this.length()
+  output:
+    aws_s3: { bucket: batches, path: \${! uuid_v4() }.json }
+
 NEVER USE THESE PATTERNS:
 - Multiple "---" separated documents (wrong) - ONE document only
 - "components:" (wrong) - use "input:", "pipeline:", "output:"
@@ -860,10 +875,23 @@ ${context || 'No relevant documentation found for this query.'}`;
     : body.message;
   messages.push({ role: 'user', content: userMessage });
 
+  // Detect complex queries that need more tokens
+  const queryLower = body.message.toLowerCase();
+  const isComplexQuery = queryLower.includes('aggregat') ||
+    queryLower.includes('windowed') ||
+    queryLower.includes('dead letter') ||
+    queryLower.includes('fan out') ||
+    queryLower.includes('fan-out') ||
+    queryLower.includes('grok') ||
+    queryLower.includes('kinesis') ||
+    queryLower.includes('multiple') ||
+    body.message.length > 60; // Long prompts are usually complex
+
   // Call Workers AI - using 8B-fast with speculative decoding for speed + quality
+  // Use more tokens for complex queries to avoid truncating YAML
   const response = await (env.AI.run as Function)('@cf/meta/llama-3.1-8b-instruct-fast', {
     messages,
-    max_tokens: 768,
+    max_tokens: isComplexQuery ? 1024 : 768,
   });
 
   // Map sources to include url for frontend
