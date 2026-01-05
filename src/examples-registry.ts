@@ -86,6 +86,32 @@ output:
   },
 
   {
+    id: 'kinesis-to-stdout',
+    name: 'Kinesis Stream Processor',
+    description: 'Read from AWS Kinesis stream and process messages',
+    keywords: ['kinesis', 'aws', 'stream', 'processor', 'streaming', 'real-time'],
+    components: {
+      inputs: ['aws_kinesis'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  aws_kinesis:
+    stream: my-stream
+    dynamodb_table: kinesis_checkpoints
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
     id: 'csv-to-json',
     name: 'CSV to JSON Converter',
     description: 'Read CSV files and convert to JSON format',
