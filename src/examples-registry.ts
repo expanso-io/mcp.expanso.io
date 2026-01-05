@@ -25,6 +25,129 @@ export interface PipelineExample {
  */
 export const PIPELINE_EXAMPLES: PipelineExample[] = [
   // ============================================================================
+  // LOG AGGREGATION PIPELINES (High priority for common queries)
+  // ============================================================================
+  {
+    id: 'log-aggregation-simple',
+    name: 'Simple Log Aggregation',
+    description: 'Aggregate logs from files and write to Elasticsearch',
+    keywords: ['log', 'aggregation', 'aggregate', 'logs', 'collect', 'elasticsearch', 'file', 'parsing'],
+    components: {
+      inputs: ['file'],
+      processors: ['mapping'],
+      outputs: ['elasticsearch_v8'],
+    },
+    yaml: `input:
+  file:
+    paths:
+      - /var/log/*.log
+    codec: lines
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.timestamp = now()
+        root.hostname = env("HOSTNAME")
+        root.source = meta("path")
+
+output:
+  elasticsearch_v8:
+    urls:
+      - http://localhost:9200
+    index: logs-\${! now().format_timestamp("2006.01.02") }`,
+    bloblangPatterns: ['now()', 'env()', 'meta()', 'format_timestamp()'],
+  },
+
+  {
+    id: 's3-to-stdout',
+    name: 'S3 to Stdout',
+    description: 'Read files from S3 bucket and print to stdout',
+    keywords: ['s3', 'stdout', 'aws', 'read', 'print', 'console', 'file', 'bucket'],
+    components: {
+      inputs: ['aws_s3'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  aws_s3:
+    bucket: my-bucket
+    prefix: data/
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.file_path = meta("s3_key")
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['meta()'],
+  },
+
+  {
+    id: 'csv-to-json',
+    name: 'CSV to JSON Converter',
+    description: 'Read CSV files and convert to JSON format',
+    keywords: ['csv', 'json', 'convert', 'converter', 'parse', 'transform', 'file'],
+    components: {
+      inputs: ['file'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  file:
+    paths:
+      - /data/*.csv
+    codec: csv
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.converted_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['now()'],
+  },
+
+  {
+    id: 'metrics-aggregation-simple',
+    name: 'Simple Metrics Aggregation',
+    description: 'Aggregate metrics from Kafka and write summaries',
+    keywords: ['metrics', 'aggregation', 'aggregate', 'prometheus', 'kafka', 'batch', 'window'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['aws_s3'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - metrics
+    batching:
+      count: 100
+      period: 10s
+
+pipeline:
+  processors:
+    - mapping: |
+        root.window_id = uuid_v4()
+        root.metrics = this.map_each(m -> m.parse_json())
+        root.count = this.length()
+        root.window_end = now()
+
+output:
+  aws_s3:
+    bucket: metrics-archive
+    path: \${! now().format_timestamp("2006/01/02") }/\${! this.window_id }.json`,
+    bloblangPatterns: ['uuid_v4()', 'map_each()', 'parse_json()', 'length()', 'now()', 'format_timestamp()'],
+  },
+
+  // ============================================================================
   // KAFKA PIPELINES
   // ============================================================================
   {
