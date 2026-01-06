@@ -885,6 +885,19 @@ ${context || 'No relevant documentation found for this query.'}`;
     queryLower.includes('grok') ||
     queryLower.includes('kinesis') ||
     queryLower.includes('multiple') ||
+    queryLower.includes('elasticsearch') ||
+    queryLower.includes('elastic') ||
+    queryLower.includes('redis') ||
+    queryLower.includes('dynamodb') ||
+    queryLower.includes('cloudwatch') ||
+    queryLower.includes('sns') ||
+    queryLower.includes('sqs') ||
+    queryLower.includes('webhook') ||
+    queryLower.includes('gateway') ||
+    queryLower.includes('enrichment') ||
+    queryLower.includes('avro') ||
+    queryLower.includes('protobuf') ||
+    queryLower.includes('xml') ||
     body.message.length > 60; // Long prompts are usually complex
 
   // Call Workers AI - using 8B-fast with speculative decoding for speed + quality
@@ -903,8 +916,34 @@ ${context || 'No relevant documentation found for this query.'}`;
   let responseText = (response as { response: string }).response;
 
   // Validate and auto-fix any YAML code blocks in the response
-  const yamlBlocks = findYamlInResponse(responseText);
+  let yamlBlocks = findYamlInResponse(responseText);
   const distinctId = getDistinctId(request);
+
+  // If no YAML found and this looks like a pipeline request, retry with explicit instruction
+  if (yamlBlocks.length === 0 && isPipelineQuery(body.message)) {
+    const retryMessages = [...messages, {
+      role: 'assistant' as const,
+      content: responseText
+    }, {
+      role: 'user' as const,
+      content: 'Please provide the complete YAML pipeline configuration in a code block. Start with "input:" and include the full pipeline.'
+    }];
+
+    const retryResponse = await (env.AI.run as Function)('@cf/meta/llama-3.1-8b-instruct-fast', {
+      messages: retryMessages,
+      max_tokens: 1024,
+    });
+
+    const retryText = (retryResponse as { response: string }).response;
+    const retryYamlBlocks = findYamlInResponse(retryText);
+
+    if (retryYamlBlocks.length > 0) {
+      // Use the retry response instead
+      responseText = retryText;
+      yamlBlocks = retryYamlBlocks;
+    }
+  }
+
   let finalYaml = yamlBlocks[0] || ''; // Track the final YAML for component links
 
   // Track validation state across loop (for last YAML block)
@@ -1181,6 +1220,23 @@ function jsonResponse(
       ...headers,
     },
   });
+}
+
+// Helper: Detect if a query is asking for a pipeline
+function isPipelineQuery(query: string): boolean {
+  const lower = query.toLowerCase();
+  const pipelineKeywords = [
+    'pipeline', 'pipe', 'stream', 'flow',
+    'kafka', 'redis', 'elasticsearch', 's3', 'sqs', 'sns', 'dynamodb', 'kinesis',
+    'http', 'webhook', 'api', 'rest',
+    'transform', 'parse', 'decode', 'encode', 'convert',
+    'json', 'xml', 'avro', 'protobuf', 'csv',
+    'aggregate', 'batch', 'window',
+    'read from', 'write to', 'consume', 'produce',
+    'input', 'output', 'processor',
+    'to stdout', 'to file', 'to s3', 'to kafka'
+  ];
+  return pipelineKeywords.some(kw => lower.includes(kw));
 }
 
 // Helper: Find YAML blocks in response text
