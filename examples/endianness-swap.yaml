@@ -1,0 +1,40 @@
+---
+id: endianness-swap
+name: Hex Endianness Swap
+description: Handle byte order conversion for Modbus or binary data
+keywords:
+  - endian
+  - endianness
+  - hex
+  - binary
+  - modbus
+  - byte
+  - swap
+  - reverse
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - decode("hex")
+  - reverse()
+  - encode("hex")
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [modbus-data]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.correct_endian = this.hex_value.decode("hex").reverse().encode("hex")
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: corrected-data

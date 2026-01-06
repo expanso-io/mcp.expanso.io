@@ -1,0 +1,42 @@
+---
+id: gcp-spanner-cdc
+name: GCP Spanner Change Data Capture
+description: Stream changes from Google Cloud Spanner using CDC
+keywords:
+  - gcp
+  - google
+  - spanner
+  - cdc
+  - change
+  - stream
+  - database
+  - realtime
+components:
+  inputs:
+    - gcp_spanner_cdc
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns: []
+---
+input:
+  gcp_spanner_cdc:
+    project: my-project
+    instance: my-instance
+    database: my-database
+    stream: my-change-stream
+
+pipeline:
+  processors:
+    - mapping: |
+        root.table = this.table_name
+        root.operation = this.mod_type
+        root.data = this.new_values
+        root.timestamp = this.commit_timestamp
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: spanner-changes

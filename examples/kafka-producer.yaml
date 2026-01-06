@@ -1,0 +1,40 @@
+---
+id: kafka-producer
+name: Kafka Producer Pipeline
+description: Produce messages to a Kafka topic
+keywords:
+  - kafka
+  - producer
+  - produce
+  - write
+  - publish
+  - topic
+components:
+  inputs:
+    - generate
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - uuid_v4()
+  - now()
+---
+input:
+  generate:
+    count: 100
+    interval: 100ms
+    mapping: |
+      root.id = uuid_v4()
+      root.timestamp = now()
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: my-output-topic

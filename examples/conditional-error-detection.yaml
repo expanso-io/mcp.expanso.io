@@ -1,0 +1,39 @@
+---
+id: conditional-error-detection
+name: Conditional Error Detection
+description: Detect errors using conditional logic (bit relations)
+keywords:
+  - conditional
+  - error
+  - detect
+  - boolean
+  - logic
+  - state
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - == comparison
+  - "&& and"
+  - "|| or"
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [machine-state]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.Error = this.State == "run" && this.speed == 0
+        root.is_idle = this.State == "idle" || this.speed < 10
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: state-analysis

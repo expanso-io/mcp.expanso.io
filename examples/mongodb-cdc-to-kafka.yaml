@@ -1,0 +1,39 @@
+---
+id: mongodb-cdc-to-kafka
+name: MongoDB CDC to Kafka
+description: Stream MongoDB changes to Kafka
+keywords:
+  - mongodb
+  - cdc
+  - change
+  - stream
+  - kafka
+  - realtime
+components:
+  inputs:
+    - mongodb_cdc
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - string()
+---
+input:
+  mongodb_cdc:
+    url: mongodb://localhost:27017
+    database: mydb
+    collection: orders
+
+pipeline:
+  processors:
+    - mapping: |
+        root.operation = this.operationType
+        root.document = this.fullDocument
+        root.timestamp = this.clusterTime.string()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: order-changes

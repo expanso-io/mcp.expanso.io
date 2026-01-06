@@ -1,0 +1,44 @@
+---
+id: pii-redaction
+name: PII Redaction
+description: Redact personally identifiable information from messages
+keywords:
+  - pii
+  - redact
+  - privacy
+  - security
+  - mask
+  - gdpr
+  - compliance
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - re_replace_all()
+  - if { } else { }
+  - deleted()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-data
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.email = this.email.re_replace_all("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[REDACTED]")
+        root.phone = this.phone.re_replace_all("\d{3}-\d{3}-\d{4}", "[REDACTED]")
+        root.ssn = if this.ssn != null { "[REDACTED]" } else { deleted() }
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: sanitized-data

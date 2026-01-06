@@ -1,0 +1,46 @@
+---
+id: openai-embedding
+name: OpenAI Embedding Generation
+description: Generate embeddings for text using OpenAI API
+keywords:
+  - openai
+  - embedding
+  - ai
+  - ml
+  - vector
+  - rag
+components:
+  inputs:
+    - kafka
+  processors:
+    - openai_embeddings
+    - mapping
+  outputs:
+    - qdrant
+bloblangPatterns:
+  - env()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - documents
+
+pipeline:
+  processors:
+    - mapping: |
+        root.id = this.id
+        root.text = this.content
+    - openai_embeddings:
+        api_key: ${! env("OPENAI_API_KEY") }
+        model: text-embedding-3-small
+    - mapping: |
+        root.id = this.id
+        root.vector = this.embedding
+        root.payload = {"text": this.text}
+
+output:
+  qdrant:
+    grpc_host: localhost:6334
+    collection: documents

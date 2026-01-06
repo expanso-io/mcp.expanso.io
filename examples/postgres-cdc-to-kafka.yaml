@@ -1,0 +1,46 @@
+---
+id: postgres-cdc-to-kafka
+name: PostgreSQL CDC to Kafka
+description: Stream PostgreSQL changes to Kafka using CDC
+keywords:
+  - postgres
+  - postgresql
+  - cdc
+  - change
+  - data
+  - capture
+  - kafka
+  - replication
+  - wal
+components:
+  inputs:
+    - postgres_cdc
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - now()
+---
+input:
+  postgres_cdc:
+    dsn: postgres://user:pass@localhost:5432/mydb?replication=database
+    slot_name: my_slot
+    tables:
+      - public.orders
+      - public.customers
+
+pipeline:
+  processors:
+    - mapping: |
+        root.table = this.table
+        root.operation = this.operation
+        root.data = this.after
+        root.before = this.before
+        root.timestamp = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: cdc-${! this.table }

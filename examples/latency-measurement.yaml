@@ -1,0 +1,45 @@
+---
+id: latency-measurement
+name: Message Latency Measurement
+description: Measure processing latency between timestamps
+keywords:
+  - latency
+  - timing
+  - performance
+  - measurement
+  - timestamp
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - timestamp_unix_nano()
+  - exists()
+  - dynamic field names
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [events]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = if !this.exists("timestamp_ms") { deleted() }
+    - mapping: |
+        let current_timestamp = (timestamp_unix_nano() / 1000000).floor()
+        let original_timestamp = this.timestamp_ms.number()
+        let latency = $current_timestamp - $original_timestamp
+        let process_value_name = meta("kafka_topic").replace_all(".", "_")
+        root = {
+          "timestamp_ms": $current_timestamp,
+          $process_value_name: $latency
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: latency-metrics

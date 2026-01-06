@@ -1,0 +1,42 @@
+---
+id: multi-topic-kafka
+name: Multi-Topic Kafka Consumer
+description: Consume messages from multiple Kafka topics
+keywords:
+  - kafka
+  - multi
+  - topic
+  - multiple
+  - topics
+  - consumer
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - meta()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - topic-one
+      - topic-two
+      - topic-three
+    consumer_group: multi-topic-consumer
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.source_topic = meta("kafka_topic")
+        root.processed_at = now()
+
+output:
+  stdout: {}

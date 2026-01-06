@@ -1,0 +1,41 @@
+---
+id: aws-sns-publish
+name: AWS SNS Publisher
+description: Publish messages to AWS SNS topics for fan-out messaging
+keywords:
+  - aws
+  - sns
+  - publish
+  - notify
+  - fanout
+  - pubsub
+  - notification
+  - topic
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - aws_sns
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.published_at = now()
+
+output:
+  aws_sns:
+    topic_arn: arn:aws:sns:us-east-1:123456789012:my-topic
+    region: us-east-1

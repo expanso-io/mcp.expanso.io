@@ -1,0 +1,45 @@
+---
+id: log-aggregation-simple
+name: Simple Log Aggregation
+description: Aggregate logs from files and write to Elasticsearch
+keywords:
+  - log
+  - aggregation
+  - aggregate
+  - logs
+  - collect
+  - elasticsearch
+  - file
+  - parsing
+components:
+  inputs:
+    - file
+  processors:
+    - mapping
+  outputs:
+    - elasticsearch_v8
+bloblangPatterns:
+  - now()
+  - env()
+  - meta()
+  - format_timestamp()
+---
+input:
+  file:
+    paths:
+      - /var/log/*.log
+    codec: lines
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.timestamp = now()
+        root.hostname = env("HOSTNAME")
+        root.source = meta("path")
+
+output:
+  elasticsearch_v8:
+    urls:
+      - http://localhost:9200
+    index: logs-${! now().format_timestamp("2006.01.02") }

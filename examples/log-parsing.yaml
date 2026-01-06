@@ -1,0 +1,44 @@
+---
+id: log-parsing
+name: Log Parsing and Enrichment
+description: Parse logs with grok patterns and enrich with metadata
+keywords:
+  - log
+  - logs
+  - parse
+  - grok
+  - observability
+  - monitoring
+components:
+  inputs:
+    - file
+  processors:
+    - grok
+    - mapping
+  outputs:
+    - elasticsearch_v8
+bloblangPatterns:
+  - parse_timestamp_strptime()
+  - env()
+---
+input:
+  file:
+    paths:
+      - /var/log/app/*.log
+    codec: lines
+
+pipeline:
+  processors:
+    - grok:
+        expressions:
+          - '%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} %{GREEDYDATA:message}'
+    - mapping: |
+        root = this
+        root.@timestamp = this.timestamp.parse_timestamp_strptime("%Y-%m-%dT%H:%M:%S")
+        root.hostname = env("HOSTNAME")
+
+output:
+  elasticsearch_v8:
+    urls:
+      - http://localhost:9200
+    index: app-logs-%{+2006.01.02}

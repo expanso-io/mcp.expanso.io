@@ -1,0 +1,40 @@
+---
+id: aws-kinesis-output
+name: AWS Kinesis Stream Output
+description: Write messages to AWS Kinesis Data Streams
+keywords:
+  - aws
+  - kinesis
+  - stream
+  - output
+  - write
+  - realtime
+  - streaming
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - aws_kinesis
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.partition_key = this.user_id
+
+output:
+  aws_kinesis:
+    stream: my-kinesis-stream
+    partition_key: ${! this.partition_key }
+    region: us-east-1

@@ -1,0 +1,37 @@
+---
+id: cloudwatch-logs
+name: AWS CloudWatch Logs
+description: Send logs to AWS CloudWatch Logs
+keywords:
+  - cloudwatch
+  - logs
+  - aws
+  - logging
+  - monitoring
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - aws_cloudwatch_logs
+bloblangPatterns:
+  - now()
+  - ts_unix_milli()
+  - env()
+---
+input:
+  stdin:
+    codec: lines
+
+pipeline:
+  processors:
+    - mapping: |
+        root.message = this
+        root.timestamp = now().ts_unix_milli()
+
+output:
+  aws_cloudwatch_logs:
+    log_group: /my-app/logs
+    log_stream: ${! env("HOSTNAME") }
+    region: us-east-1

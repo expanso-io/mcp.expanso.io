@@ -1,0 +1,52 @@
+---
+id: bedrock-summarization
+name: AWS Bedrock Summarization
+description: Summarize documents using AWS Bedrock Claude
+keywords:
+  - bedrock
+  - aws
+  - summarize
+  - summary
+  - claude
+  - ai
+  - ml
+  - document
+  - text
+components:
+  inputs:
+    - aws_s3
+  processors:
+    - aws_bedrock_chat
+    - mapping
+  outputs:
+    - aws_s3
+bloblangPatterns:
+  - index()
+  - now()
+---
+input:
+  aws_s3:
+    bucket: documents
+    prefix: raw/
+
+pipeline:
+  processors:
+    - mapping: |
+        root.messages = [
+          {
+            "role": "user",
+            "content": "Summarize the following document in 3 bullet points:\n\n" + this
+          }
+        ]
+    - aws_bedrock_chat:
+        model: anthropic.claude-3-haiku-20240307-v1:0
+        region: us-east-1
+    - mapping: |
+        root.original_key = this.key
+        root.summary = this.choices.index(0).message.content
+        root.summarized_at = now()
+
+output:
+  aws_s3:
+    bucket: documents
+    path: summaries/${! this.original_key }.json

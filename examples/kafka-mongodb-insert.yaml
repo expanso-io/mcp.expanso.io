@@ -1,0 +1,48 @@
+---
+id: kafka-mongodb-insert
+name: Kafka to MongoDB
+description: Insert Kafka messages into MongoDB with automatic timestamps
+keywords:
+  - kafka
+  - mongodb
+  - database
+  - insert
+  - nosql
+  - document
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - mongodb
+bloblangPatterns:
+  - timestamp_unix()
+  - document_map
+  - object literal
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - my-events
+    consumer_group: mongo-writer
+
+pipeline:
+  processors:
+    - mapping: |
+        root = {
+          "message": this,
+          "timestamp_unix": timestamp_unix()
+        }
+
+output:
+  mongodb:
+    url: mongodb://localhost:27017
+    database: mydb
+    collection: events
+    operation: insert-one
+    document_map: |
+      root.message = this.message
+      root.timestamp_unix = this.timestamp_unix

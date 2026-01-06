@@ -1,0 +1,43 @@
+---
+id: opcua-mqtt-bridge
+name: OPC-UA to MQTT Bridge
+description: Bridge OPC-UA data to MQTT with dynamic topic paths from node metadata
+keywords:
+  - opcua
+  - mqtt
+  - iiot
+  - plc
+  - industrial
+  - bridge
+  - ot
+components:
+  inputs:
+    - opcua
+  processors:
+    - mapping
+  outputs:
+    - mqtt
+bloblangPatterns:
+  - meta()
+  - timestamp_unix()
+  - dynamic topic interpolation
+---
+input:
+  opcua:
+    endpoint: 'opc.tcp://localhost:46010'
+    nodeIDs: ['ns=2;s=IoTSensors']
+
+pipeline:
+  processors:
+    - mapping: |
+        root = {
+          meta("opcua_path"): this,
+          "timestamp_unix": timestamp_unix()
+        }
+
+output:
+  mqtt:
+    urls:
+      - 'localhost:1883'
+    topic: 'ia/raw/opcuasimulator/${! meta("opcua_path") }'
+    client_id: 'benthos-umh'

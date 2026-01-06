@@ -1,0 +1,54 @@
+---
+id: multi-output-broker
+name: Multi-Output Broker
+description: Write to multiple outputs simultaneously
+keywords:
+  - broker
+  - multi
+  - output
+  - duplicate
+  - copy
+  - multiple
+  - destinations
+  - fanout
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - broker
+bloblangPatterns:
+  - parse_json()
+  - now()
+  - format_timestamp()
+  - uuid_v4()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.replicated_at = now()
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - kafka:
+          addresses:
+            - localhost:9092
+          topic: events-primary
+      - aws_s3:
+          bucket: events-archive
+          path: ${! now().format_timestamp("2006/01/02") }/${! uuid_v4() }.json
+      - elasticsearch_v8:
+          urls:
+            - http://localhost:9200
+          index: events

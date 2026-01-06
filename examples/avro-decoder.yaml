@@ -1,0 +1,39 @@
+---
+id: avro-decoder
+name: Avro Decoder Pipeline
+description: Decode Avro messages and convert to JSON
+keywords:
+  - avro
+  - decode
+  - decoder
+  - schema
+  - confluent
+  - kafka
+components:
+  inputs:
+    - kafka
+  processors:
+    - schema_registry_decode
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - avro-events
+
+pipeline:
+  processors:
+    - schema_registry_decode:
+        url: http://localhost:8081
+    - mapping: |
+        root = this
+        root.decoded_at = now()
+
+output:
+  stdout: {}

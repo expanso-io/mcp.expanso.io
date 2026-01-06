@@ -1,0 +1,42 @@
+---
+id: kafka-to-elasticsearch
+name: Kafka to Elasticsearch
+description: Stream Kafka messages to Elasticsearch for indexing
+keywords:
+  - kafka
+  - elasticsearch
+  - elastic
+  - index
+  - search
+  - streaming
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - elasticsearch
+bloblangPatterns:
+  - parse_json()
+  - now()
+  - format_timestamp()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    consumer_group: es-indexer
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.indexed_at = now()
+
+output:
+  elasticsearch:
+    urls:
+      - http://localhost:9200
+    index: events-${! now().format_timestamp("2006.01.02") }

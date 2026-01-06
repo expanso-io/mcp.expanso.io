@@ -1,0 +1,44 @@
+---
+id: mqtt-ssl-tls
+name: MQTT with SSL/TLS
+description: Connect to MQTT broker with SSL/TLS and self-signed certificates
+keywords:
+  - mqtt
+  - ssl
+  - tls
+  - certificate
+  - secure
+  - encrypted
+components:
+  inputs:
+    - mqtt
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - tls configuration
+  - parse_json()
+  - now()
+---
+input:
+  mqtt:
+    urls:
+      - ssl://secure-broker:8883
+    topics:
+      - secure-topic/#
+    client_id: ssl-client
+    tls:
+      enabled: true
+      skip_cert_verify: true
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.received_at = now()
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: secure-data

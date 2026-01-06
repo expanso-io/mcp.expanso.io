@@ -1,0 +1,46 @@
+---
+id: kafka-filter-events
+name: Kafka Event Filtering
+description: Filter Kafka events by type and forward matching ones
+keywords:
+  - kafka
+  - filter
+  - events
+  - conditional
+  - routing
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+  - if { } else { }
+  - deleted()
+  - let
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-events
+    consumer_group: event-filter
+
+pipeline:
+  processors:
+    - mapping: |
+        let event = this.parse_json()
+        root = if $event.type == "purchase" {
+          $event
+        } else {
+          deleted()
+        }
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: purchase-events

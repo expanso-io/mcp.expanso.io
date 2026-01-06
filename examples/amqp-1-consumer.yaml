@@ -1,0 +1,38 @@
+---
+id: amqp-1-consumer
+name: AMQP 1.0 Consumer
+description: Consume messages using AMQP 1.0 protocol
+keywords:
+  - amqp
+  - queue
+  - consumer
+  - input
+  - messaging
+  - "1.0"
+  - azure
+  - service
+  - bus
+components:
+  inputs:
+    - amqp_1
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  amqp_1:
+    url: amqp://localhost:5672/
+    source_address: /my-queue
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.received_at = now()
+
+output:
+  stdout: {}

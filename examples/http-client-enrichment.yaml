@@ -1,0 +1,47 @@
+---
+id: http-client-enrichment
+name: HTTP API Enrichment
+description: Enrich messages by calling an external HTTP API
+keywords:
+  - http
+  - api
+  - enrichment
+  - lookup
+  - external
+  - rest
+components:
+  inputs:
+    - kafka
+  processors:
+    - http
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+  - now()
+  - env()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-data
+
+pipeline:
+  processors:
+    - http:
+        url: https://api.example.com/lookup/${! this.id }
+        verb: GET
+        headers:
+          Authorization: Bearer ${! env("API_TOKEN") }
+    - mapping: |
+        root = this.parse_json()
+        root.enriched_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: enriched-data

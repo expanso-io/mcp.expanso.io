@@ -1,0 +1,35 @@
+---
+id: xml-to-json
+name: XML to JSON Pipeline
+description: Convert XML data to JSON format
+keywords:
+  - xml
+  - json
+  - convert
+  - transform
+  - parse
+  - format
+components:
+  inputs:
+    - file
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_xml()
+  - now()
+---
+input:
+  file:
+    paths:
+      - /data/*.xml
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_xml()
+        root.converted_at = now()
+
+output:
+  stdout: {}

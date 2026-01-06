@@ -1,0 +1,44 @@
+---
+id: azure-table-storage-output
+name: Azure Table Storage Output
+description: Write entities to Azure Table Storage
+keywords:
+  - azure
+  - table
+  - storage
+  - output
+  - write
+  - entities
+  - microsoft
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - azure_table_storage
+bloblangPatterns:
+  - parse_json()
+  - now()
+  - env()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.PartitionKey = this.category
+        root.RowKey = this.id
+        root.stored_at = now()
+
+output:
+  azure_table_storage:
+    storage_account: mystorageaccount
+    storage_access_key: ${! env("AZURE_STORAGE_KEY") }
+    table_name: events

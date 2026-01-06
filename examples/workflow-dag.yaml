@@ -1,0 +1,69 @@
+---
+id: workflow-dag
+name: Workflow DAG Processing
+description: Process messages through a directed acyclic graph of stages
+keywords:
+  - workflow
+  - dag
+  - pipeline
+  - stages
+  - dependencies
+  - orchestration
+  - graph
+components:
+  inputs:
+    - kafka
+  processors:
+    - workflow
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+  - merge()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-data
+
+pipeline:
+  processors:
+    - workflow:
+        meta_path: workflow_status
+        order:
+          - - parse
+          - - validate
+            - enrich
+          - - transform
+        branches:
+          parse:
+            request_map: 'root = this'
+            processors:
+              - mapping: 'root = this.parse_json()'
+            result_map: 'root.parsed = this'
+          validate:
+            request_map: 'root = this.parsed'
+            processors:
+              - mapping: 'root.valid = this.id != null'
+            result_map: 'root.validation = this'
+          enrich:
+            request_map: 'root = this.parsed'
+            processors:
+              - mapping: 'root.enriched = true'
+            result_map: 'root.enrichment = this'
+          transform:
+            request_map: 'root = this'
+            processors:
+              - mapping: |
+                  root = this.parsed
+                  root.metadata = this.validation.merge(this.enrichment)
+            result_map: 'root = this'
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: processed-data

@@ -1,0 +1,33 @@
+---
+id: stdin-transform-stdout
+name: Stdin to Stdout Transform
+description: Read from stdin, transform, and write to stdout
+keywords:
+  - stdin
+  - stdout
+  - transform
+  - cli
+  - pipe
+  - test
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed_at = now()
+
+output:
+  stdout: {}

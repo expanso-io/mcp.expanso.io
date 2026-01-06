@@ -1,0 +1,50 @@
+---
+id: fallback-chain
+name: Fallback Output Chain
+description: Try outputs in order until one succeeds
+keywords:
+  - fallback
+  - chain
+  - backup
+  - redundant
+  - failover
+  - resilience
+  - output
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - fallback
+bloblangPatterns:
+  - parse_json()
+  - now()
+  - uuid_v4()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - critical-events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed_at = now()
+
+output:
+  fallback:
+    - http_client:
+        url: https://primary-api.example.com/ingest
+        verb: POST
+        retries: 3
+    - http_client:
+        url: https://secondary-api.example.com/ingest
+        verb: POST
+        retries: 3
+    - aws_s3:
+        bucket: fallback-storage
+        path: failed/${! uuid_v4() }.json

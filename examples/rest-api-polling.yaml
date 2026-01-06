@@ -1,0 +1,41 @@
+---
+id: rest-api-polling
+name: REST API Polling Pipeline
+description: Poll a REST API endpoint periodically and process responses
+keywords:
+  - rest
+  - api
+  - polling
+  - poll
+  - http
+  - periodic
+  - interval
+components:
+  inputs:
+    - generate
+    - http
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  generate:
+    interval: 30s
+    mapping: |
+      root = {}
+
+pipeline:
+  processors:
+    - http:
+        url: https://api.example.com/status
+        verb: GET
+    - mapping: |
+        root = this.parse_json()
+        root.polled_at = now()
+
+output:
+  stdout: {}

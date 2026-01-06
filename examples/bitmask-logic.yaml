@@ -1,0 +1,44 @@
+---
+id: bitmask-logic
+name: Bitmask Status Decoding
+description: Decode status bits from integer values
+keywords:
+  - bitmask
+  - bit
+  - status
+  - decode
+  - binary
+  - flag
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - int64()
+  - modulo %
+  - integer division
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [machine-status]
+
+pipeline:
+  processors:
+    - mapping: |
+        let status_code = this.status.number().round().int64()
+        root = {
+          "status_code": status_code,
+          "machine_running": ($status_code % 2) == 1,
+          "error_detected": (($status_code / 2) % 2) == 1,
+          "maintenance_required": (($status_code / 4) % 2) == 1,
+          "timestamp_ms": (timestamp_unix_nano() / 1000000).floor()
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: decoded-status

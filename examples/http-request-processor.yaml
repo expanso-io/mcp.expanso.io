@@ -1,0 +1,35 @@
+---
+id: http-request-processor
+name: HTTP Request Processor
+description: Process HTTP requests from a server input
+keywords:
+  - http
+  - request
+  - processor
+  - server
+  - process
+  - handle
+components:
+  inputs:
+    - http_server
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  http_server:
+    address: 0.0.0.0:8080
+    path: /process
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed_at = now()
+
+output:
+  stdout: {}

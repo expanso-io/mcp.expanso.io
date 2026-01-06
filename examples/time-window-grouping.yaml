@@ -1,0 +1,48 @@
+---
+id: time-window-grouping
+name: Time Window Grouping
+description: Group messages by time windows
+keywords:
+  - time
+  - window
+  - grouping
+  - batch
+  - aggregate
+  - interval
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - aws_s3
+bloblangPatterns:
+  - uuid_v4()
+  - map_each()
+  - parse_json()
+  - length()
+  - now()
+  - format_timestamp()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    batching:
+      period: 60s
+      count: 1000
+
+pipeline:
+  processors:
+    - mapping: |
+        root.window_id = uuid_v4()
+        root.events = this.map_each(e -> e.parse_json())
+        root.count = this.length()
+        root.window_end = now()
+
+output:
+  aws_s3:
+    bucket: time-windows
+    path: ${! now().format_timestamp("2006/01/02/15") }/${! this.window_id }.json

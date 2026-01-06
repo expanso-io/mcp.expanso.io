@@ -1,0 +1,43 @@
+---
+id: mqtt-bridge
+name: MQTT Broker Bridge
+description: Bridge external MQTT broker to internal system
+keywords:
+  - mqtt
+  - bridge
+  - import
+  - broker
+  - external
+components:
+  inputs:
+    - mqtt
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - meta("mqtt_topic")
+  - catch()
+  - null check
+---
+input:
+  mqtt:
+    urls:
+      - tcp://external-broker:1883
+    topics:
+      - external/#
+    client_id: mqtt-bridge
+
+pipeline:
+  processors:
+    - mapping: |
+        let mqtt_topic = meta("mqtt_topic").replace_all("/", ".")
+        let payload = this.catch(deleted())
+        root = if payload != null { payload } else { deleted() }
+        root.source_topic = $mqtt_topic
+        root.imported_at = now()
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: imported-mqtt

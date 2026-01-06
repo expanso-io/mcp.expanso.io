@@ -1,0 +1,61 @@
+---
+id: dead-letter-queue
+name: Dead Letter Queue Pattern
+description: Route failed messages to a dead letter queue
+keywords:
+  - error
+  - dlq
+  - dead
+  - letter
+  - queue
+  - retry
+  - fallback
+components:
+  inputs:
+    - kafka
+  processors:
+    - try
+    - catch
+    - mapping
+  outputs:
+    - switch
+bloblangPatterns:
+  - parse_json()
+  - now()
+  - error()
+  - meta()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - incoming
+
+pipeline:
+  processors:
+    - try:
+        - mapping: |
+            root = this.parse_json()
+            root.processed_at = now()
+    - catch:
+        - mapping: |
+            root.original = this
+            root.error = error()
+            root.failed_at = now()
+            meta failed = "true"
+
+output:
+  switch:
+    cases:
+      - check: meta("failed") == "true"
+        output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: dead-letter-queue
+      - output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: processed

@@ -1,0 +1,61 @@
+---
+id: parallel-enrichment
+name: Parallel HTTP Enrichment
+description: Enrich messages from multiple APIs in parallel
+keywords:
+  - parallel
+  - enrich
+  - http
+  - api
+  - concurrent
+  - lookup
+  - multiple
+  - sources
+components:
+  inputs:
+    - kafka
+  processors:
+    - parallel
+    - http
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - users
+
+pipeline:
+  processors:
+    - parallel:
+        cap: 10
+        processors:
+          - branch:
+              request_map: 'root = this.user_id'
+              processors:
+                - http:
+                    url: https://api.example.com/user/${! this }
+                    verb: GET
+              result_map: 'root.profile = this.parse_json()'
+          - branch:
+              request_map: 'root = this.user_id'
+              processors:
+                - http:
+                    url: https://api.example.com/preferences/${! this }
+                    verb: GET
+              result_map: 'root.preferences = this.parse_json()'
+    - mapping: |
+        root = this
+        root.enriched_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: enriched-users

@@ -1,0 +1,42 @@
+---
+id: azure-blob-storage-input
+name: Azure Blob Storage Input
+description: Read files from Azure Blob Storage containers
+keywords:
+  - azure
+  - blob
+  - storage
+  - input
+  - read
+  - container
+  - files
+  - microsoft
+components:
+  inputs:
+    - azure_blob_storage
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - meta()
+  - now()
+  - env()
+---
+input:
+  azure_blob_storage:
+    storage_account: mystorageaccount
+    storage_access_key: ${! env("AZURE_STORAGE_KEY") }
+    container: my-container
+    prefix: incoming/
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.blob_name = meta("blob_storage_key")
+        root.processed_at = now()
+
+output:
+  stdout: {}

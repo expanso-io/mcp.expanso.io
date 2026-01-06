@@ -1,0 +1,51 @@
+---
+id: archive-squash
+name: Archive and Squash Messages
+description: Combine multiple messages into a single JSON payload
+keywords:
+  - archive
+  - squash
+  - combine
+  - merge
+  - aggregate
+  - opc-ua
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+    - archive
+  outputs:
+    - kafka
+bloblangPatterns:
+  - "archive format: json_array"
+  - append()
+  - squash()
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [opc-ua-tags]
+
+pipeline:
+  processors:
+    - mapping: |
+        let field_name = match {
+          meta("opcua_node_id") == "ns=4;i=3" => "machineNumber",
+          meta("opcua_node_id") == "ns=4;i=4" => "dataSetNumber",
+          _ => meta("opcua_tag_name")
+        }
+        root = {
+          $field_name: this.value
+        }
+    - archive:
+        format: json_array
+    - mapping: |
+        root = this
+          .append({"timestamp_ms": (timestamp_unix_nano() / 1000000).floor()})
+          .squash()
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: combined-opc-ua

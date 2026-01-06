@@ -1,0 +1,38 @@
+---
+id: kafka-to-redis
+name: Kafka to Redis Pipeline
+description: Stream Kafka messages to Redis for caching
+keywords:
+  - kafka
+  - redis
+  - cache
+  - streaming
+  - key-value
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - redis_hash
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - users
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  redis_hash:
+    url: redis://localhost:6379
+    key: user:${! this.id }
+    fields_mapping: |
+      root = this

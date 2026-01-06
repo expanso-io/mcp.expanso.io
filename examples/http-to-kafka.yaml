@@ -1,0 +1,38 @@
+---
+id: http-to-kafka
+name: HTTP to Kafka Pipeline
+description: Receive HTTP requests and forward to Kafka
+keywords:
+  - http
+  - kafka
+  - webhook
+  - ingest
+  - forward
+  - publish
+components:
+  inputs:
+    - http_server
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  http_server:
+    address: 0.0.0.0:8080
+    path: /ingest
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.ingested_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: ingested-events

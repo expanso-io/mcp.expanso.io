@@ -1,0 +1,68 @@
+---
+id: content-moderation
+name: AI Content Moderation
+description: Moderate content using OpenAI moderation API
+keywords:
+  - moderation
+  - content
+  - safety
+  - ai
+  - openai
+  - filter
+  - toxic
+  - harmful
+  - compliance
+components:
+  inputs:
+    - kafka
+  processors:
+    - http
+    - mapping
+  outputs:
+    - switch
+bloblangPatterns:
+  - env()
+  - parse_json()
+  - index()
+  - if { } else { }
+  - meta
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - user-content
+
+pipeline:
+  processors:
+    - mapping: |
+        root.input = this.content
+    - http:
+        url: https://api.openai.com/v1/moderations
+        verb: POST
+        headers:
+          Authorization: Bearer ${! env("OPENAI_API_KEY") }
+          Content-Type: application/json
+    - mapping: |
+        let result = this.parse_json()
+        root.content_id = this.content_id
+        root.content = this.content
+        root.flagged = $result.results.index(0).flagged
+        root.categories = $result.results.index(0).categories
+        meta flagged = if $result.results.index(0).flagged { "true" } else { "false" }
+
+output:
+  switch:
+    cases:
+      - check: meta("flagged") == "true"
+        output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: flagged-content
+      - output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: approved-content

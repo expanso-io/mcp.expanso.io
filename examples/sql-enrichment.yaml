@@ -1,0 +1,51 @@
+---
+id: sql-enrichment
+name: Database Enrichment (SQL)
+description: Enrich messages by fetching data from SQL database
+keywords:
+  - sql
+  - database
+  - postgres
+  - mysql
+  - enrich
+  - lookup
+  - join
+components:
+  inputs:
+    - kafka
+  processors:
+    - branch
+    - sql_select
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - branch
+  - sql_select
+  - result_map
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [raw-events]
+
+pipeline:
+  processors:
+    - branch:
+        processors:
+          - sql_select:
+              driver: postgres
+              dsn: postgres://user:pass@localhost:5432/mydb
+              table: asset_data
+              where: asset_id = ?
+              args_mapping: root = [this.asset_id]
+              columns:
+                - latest_value
+                - asset_name
+        result_map: |
+          root.enrichment = this
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: enriched-events

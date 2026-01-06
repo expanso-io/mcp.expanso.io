@@ -1,0 +1,71 @@
+---
+id: kafka-cache-aggregation
+name: Kafka Cache Aggregation
+description: Aggregate messages from multiple topics using cache
+keywords:
+  - cache
+  - aggregate
+  - kafka
+  - combine
+  - multiple
+  - topics
+components:
+  inputs:
+    - kafka
+  processors:
+    - branch
+    - cache
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - cache processor
+  - match expression
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics:
+      - classification.topic1
+      - classification.topic2
+    consumer_group: aggregator
+
+pipeline:
+  processors:
+    - branch:
+        processors:
+          - cache:
+              resource: memorycache
+              operator: set
+              key: ${! meta("kafka_topic") }
+              value: ${! json("classification") }
+    - branch:
+        processors:
+          - cache:
+              resource: memorycache
+              operator: get
+              key: classification.topic1
+        result_map: root.class_1 = content().string()
+    - branch:
+        processors:
+          - cache:
+              resource: memorycache
+              operator: get
+              key: classification.topic2
+        result_map: root.class_2 = content().string()
+    - mapping: |
+        root.final = match {
+          this.class_1 == "off" || this.class_2 == "off" => "Machine-off",
+          this.class_1 == "on" && this.class_2 == "good" => "good",
+          _ => "Unknown"
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: aggregated-result
+
+cache_resources:
+  - label: memorycache
+    memory:
+      default_ttl: 5m

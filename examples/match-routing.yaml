@@ -1,0 +1,45 @@
+---
+id: match-routing
+name: Match Expression Routing
+description: Route messages using match expressions (Modbus example)
+keywords:
+  - match
+  - route
+  - routing
+  - conditional
+  - modbus
+  - switch
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - match expression
+  - meta()
+  - let variable
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [modbus-data]
+
+pipeline:
+  processors:
+    - mapping: |
+        let workcell = match {
+          meta("modbus_slave_id") == "10" => "Rack_ID_10",
+          meta("modbus_slave_id") == "20" => "Rack_ID_20",
+          meta("modbus_slave_id") == "30" => "Rack_ID_30",
+          _ => "Unknown_Rack"
+        }
+        root = this
+        root.workcell = $workcell
+        root.tagname = meta("modbus_tag_name")
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: routed-data

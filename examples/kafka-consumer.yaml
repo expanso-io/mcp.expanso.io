@@ -1,0 +1,36 @@
+---
+id: kafka-consumer
+name: Kafka Consumer Example
+description: Consume messages from a Kafka topic
+keywords:
+  - kafka
+  - consumer
+  - consume
+  - read
+  - subscribe
+  - topic
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - my-topic
+    consumer_group: my-consumer-group
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  stdout: {}

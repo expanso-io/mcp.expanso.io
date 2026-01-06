@@ -1,0 +1,50 @@
+---
+id: sql-upsert-sync
+name: SQL Upsert Synchronization
+description: Upsert data from one database to another
+keywords:
+  - sql
+  - upsert
+  - sync
+  - database
+  - insert
+  - update
+  - replicate
+  - postgres
+  - mysql
+components:
+  inputs:
+    - sql_select
+  processors:
+    - mapping
+  outputs:
+    - sql_raw
+bloblangPatterns:
+  - now()
+---
+input:
+  sql_select:
+    driver: postgres
+    dsn: postgres://user:pass@source:5432/db
+    table: products
+    columns: ["*"]
+    where: updated_at > NOW() - INTERVAL '1 hour'
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.synced_at = now()
+
+output:
+  sql_raw:
+    driver: postgres
+    dsn: postgres://user:pass@target:5432/db
+    query: |
+      INSERT INTO products (id, name, price, synced_at)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        price = EXCLUDED.price,
+        synced_at = EXCLUDED.synced_at
+    args_mapping: 'root = [this.id, this.name, this.price, this.synced_at]'

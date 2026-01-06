@@ -1,0 +1,45 @@
+---
+id: gcp-bigquery-write
+name: GCP BigQuery Write API
+description: Stream data to Google BigQuery using the Storage Write API
+keywords:
+  - gcp
+  - google
+  - bigquery
+  - write
+  - stream
+  - output
+  - warehouse
+  - insert
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - gcp_bigquery_write_api
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    batching:
+      count: 100
+      period: 10s
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.loaded_at = now()
+
+output:
+  gcp_bigquery_write_api:
+    project: my-project
+    dataset: mydataset
+    table: events

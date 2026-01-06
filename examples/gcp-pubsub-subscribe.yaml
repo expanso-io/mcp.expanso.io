@@ -1,0 +1,38 @@
+---
+id: gcp-pubsub-subscribe
+name: GCP Pub/Sub Subscriber
+description: Subscribe to Google Cloud Pub/Sub topics
+keywords:
+  - gcp
+  - google
+  - pubsub
+  - subscribe
+  - input
+  - messaging
+  - queue
+components:
+  inputs:
+    - gcp_pubsub
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - meta()
+  - now()
+---
+input:
+  gcp_pubsub:
+    project: my-project
+    subscription: my-subscription
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.message_id = meta("gcp_pubsub_message_id")
+        root.received_at = now()
+
+output:
+  stdout: {}

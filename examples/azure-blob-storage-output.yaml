@@ -1,0 +1,46 @@
+---
+id: azure-blob-storage-output
+name: Azure Blob Storage Output
+description: Write data to Azure Blob Storage containers
+keywords:
+  - azure
+  - blob
+  - storage
+  - output
+  - write
+  - container
+  - upload
+  - microsoft
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - azure_blob_storage
+bloblangPatterns:
+  - parse_json()
+  - now()
+  - format_timestamp()
+  - uuid_v4()
+  - env()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.archived_at = now()
+
+output:
+  azure_blob_storage:
+    storage_account: mystorageaccount
+    storage_access_key: ${! env("AZURE_STORAGE_KEY") }
+    container: archive
+    path: ${! now().format_timestamp("2006/01/02") }/${! uuid_v4() }.json

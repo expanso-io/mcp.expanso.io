@@ -1,0 +1,42 @@
+---
+id: protobuf-decoder
+name: Protobuf to JSON
+description: Decode Protobuf messages to JSON
+keywords:
+  - protobuf
+  - proto
+  - json
+  - decode
+  - convert
+  - binary
+components:
+  inputs:
+    - kafka
+  processors:
+    - protobuf
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - protobuf-events
+
+pipeline:
+  processors:
+    - protobuf:
+        operator: to_json
+        message: my.package.MyMessage
+        import_paths:
+          - /proto
+    - mapping: |
+        root = this
+        root.decoded_at = now()
+
+output:
+  stdout: {}

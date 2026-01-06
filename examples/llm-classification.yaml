@@ -1,0 +1,64 @@
+---
+id: llm-classification
+name: LLM Text Classification
+description: Classify text using LLM with structured output
+keywords:
+  - llm
+  - classify
+  - classification
+  - ai
+  - ml
+  - openai
+  - category
+  - label
+  - nlp
+components:
+  inputs:
+    - kafka
+  processors:
+    - openai_chat_completion
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - env()
+  - index()
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - support-tickets
+
+pipeline:
+  processors:
+    - mapping: |
+        root.messages = [
+          {
+            "role": "system",
+            "content": "Classify the support ticket. Respond with JSON: {"category": "billing|technical|general", "priority": "low|medium|high", "sentiment": "positive|neutral|negative"}"
+          },
+          {
+            "role": "user",
+            "content": this.content
+          }
+        ]
+    - openai_chat_completion:
+        api_key: ${! env("OPENAI_API_KEY") }
+        model: gpt-4o-mini
+        response_format:
+          type: json_object
+    - mapping: |
+        root.ticket_id = this.ticket_id
+        root.content = this.content
+        root.classification = this.choices.index(0).message.content.parse_json()
+        root.classified_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: classified-tickets

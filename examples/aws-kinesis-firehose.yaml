@@ -1,0 +1,44 @@
+---
+id: aws-kinesis-firehose
+name: AWS Kinesis Firehose Delivery
+description: Deliver data to AWS Kinesis Firehose for S3, Redshift, or Elasticsearch
+keywords:
+  - aws
+  - kinesis
+  - firehose
+  - delivery
+  - s3
+  - redshift
+  - elasticsearch
+  - streaming
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - aws_kinesis_firehose
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    batching:
+      count: 100
+      period: 10s
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.delivered_at = now()
+
+output:
+  aws_kinesis_firehose:
+    stream: my-firehose-stream
+    region: us-east-1

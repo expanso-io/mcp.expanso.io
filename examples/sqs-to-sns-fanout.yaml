@@ -1,0 +1,48 @@
+---
+id: sqs-to-sns-fanout
+name: AWS SQS to SNS Fanout
+description: Fan out SQS messages to multiple SNS topics
+keywords:
+  - sqs
+  - sns
+  - aws
+  - fanout
+  - pubsub
+  - broadcast
+  - multiple
+  - topics
+components:
+  inputs:
+    - aws_sqs
+  processors:
+    - mapping
+  outputs:
+    - broker
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  aws_sqs:
+    url: https://sqs.us-east-1.amazonaws.com/123456789/incoming
+    region: us-east-1
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.distributed_at = now()
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - aws_sns:
+          topic_arn: arn:aws:sns:us-east-1:123456789:notifications
+          region: us-east-1
+      - aws_sns:
+          topic_arn: arn:aws:sns:us-east-1:123456789:analytics
+          region: us-east-1
+      - aws_sns:
+          topic_arn: arn:aws:sns:us-east-1:123456789:archival
+          region: us-east-1

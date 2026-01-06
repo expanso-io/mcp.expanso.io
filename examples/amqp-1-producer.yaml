@@ -1,0 +1,43 @@
+---
+id: amqp-1-producer
+name: AMQP 1.0 Producer
+description: Publish messages using AMQP 1.0 protocol
+keywords:
+  - amqp
+  - queue
+  - producer
+  - output
+  - messaging
+  - publish
+  - "1.0"
+  - azure
+  - service
+  - bus
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - amqp_1
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.published_at = now()
+
+output:
+  amqp_1:
+    url: amqp://localhost:5672/
+    target_address: /my-queue

@@ -1,0 +1,50 @@
+---
+id: kafka-influxdb-lineprotocol
+name: Kafka to InfluxDB Line Protocol
+description: Transform Kafka messages to InfluxDB line protocol format using topic metadata
+keywords:
+  - kafka
+  - influxdb
+  - timeseries
+  - metrics
+  - line protocol
+  - http
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - http_client
+bloblangPatterns:
+  - content()
+  - number()
+  - string()
+  - split()
+  - index()
+  - meta()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - 'ia.raw.development.ioTSensors.*'
+    consumer_group: influx-writer
+
+pipeline:
+  processors:
+    - mapping: |
+        let value = content().number().string()
+        # Split topic: ia.raw.<measurement>.<location>.<field>
+        root = meta("kafka_topic").string().split(".").index(2) +
+               ",sensor=" + meta("kafka_topic").string().split(".").index(3) + " " +
+               meta("kafka_topic").string().split(".").index(4) + "=" + $value + " "
+
+output:
+  http_client:
+    url: 'http://influxdb:8086/api/v2/write?org=myorg&bucket=mybucket'
+    verb: POST
+    headers:
+      Authorization: 'Token ${INFLUX_TOKEN}'
+      Content-Type: text/plain

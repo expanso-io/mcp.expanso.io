@@ -1,0 +1,40 @@
+---
+id: webhook-to-kafka
+name: HTTP Webhook to Kafka
+description: Receive HTTP webhooks and forward to Kafka
+keywords:
+  - http
+  - webhook
+  - kafka
+  - api
+  - ingest
+  - rest
+components:
+  inputs:
+    - http_server
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - now()
+---
+input:
+  http_server:
+    address: 0.0.0.0:8080
+    path: /webhook
+    allowed_verbs:
+      - POST
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.received_at = now()
+        root.source = "webhook"
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: webhook-events

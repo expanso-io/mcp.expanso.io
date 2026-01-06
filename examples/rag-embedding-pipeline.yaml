@@ -1,0 +1,60 @@
+---
+id: rag-embedding-pipeline
+name: RAG Embedding Pipeline
+description: Generate embeddings for RAG applications with chunking
+keywords:
+  - rag
+  - embedding
+  - vector
+  - chunk
+  - ai
+  - ml
+  - retrieval
+  - augmented
+  - generation
+components:
+  inputs:
+    - kafka
+  processors:
+    - text_chunker
+    - openai_embeddings
+    - mapping
+  outputs:
+    - qdrant
+bloblangPatterns:
+  - env()
+  - uuid_v4()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - documents
+
+pipeline:
+  processors:
+    - mapping: |
+        root.doc_id = this.id
+        root.text = this.content
+    - text_chunker:
+        chunk_size: 512
+        chunk_overlap: 50
+    - openai_embeddings:
+        api_key: ${! env("OPENAI_API_KEY") }
+        model: text-embedding-3-small
+    - mapping: |
+        root.id = uuid_v4()
+        root.doc_id = this.doc_id
+        root.chunk_index = this.chunk_index
+        root.vector = this.embedding
+        root.payload = {
+          "text": this.text,
+          "doc_id": this.doc_id,
+          "chunk_index": this.chunk_index
+        }
+
+output:
+  qdrant:
+    grpc_host: localhost:6334
+    collection: document_chunks

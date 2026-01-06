@@ -10,7 +10,9 @@
     "tail": "wrangler tail",
     "typecheck": "tsc --noEmit",
     "index": "npx tsx scripts/index-content.ts",
-    "test": "vitest"
+    "test": "vitest",
+    "build:examples": "npx tsx scripts/build-examples.ts",
+    "prebuild": "npm run build:examples"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241205.0",

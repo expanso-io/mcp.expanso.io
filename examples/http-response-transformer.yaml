@@ -1,0 +1,37 @@
+---
+id: http-response-transformer
+name: HTTP Response Transformer
+description: Transform HTTP responses from an API
+keywords:
+  - http
+  - response
+  - transformer
+  - transform
+  - api
+  - client
+components:
+  inputs:
+    - http_client
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  http_client:
+    url: https://api.example.com/data
+    verb: GET
+    rate_limit: 1s
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.transformed = true
+        root.fetched_at = now()
+
+output:
+  stdout: {}

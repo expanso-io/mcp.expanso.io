@@ -1,0 +1,56 @@
+---
+id: rate-limited-processing
+name: Rate Limited Processing
+description: Process messages with rate limiting to protect downstream services
+keywords:
+  - rate
+  - limit
+  - throttle
+  - backpressure
+  - protect
+  - downstream
+  - control
+  - flow
+components:
+  inputs:
+    - kafka
+  processors:
+    - rate_limit
+    - http
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - requests
+
+pipeline:
+  processors:
+    - rate_limit:
+        resource: api_limiter
+        count: 100
+    - http:
+        url: https://api.example.com/process
+        verb: POST
+    - mapping: |
+        root = this.parse_json()
+        root.rate_limited_at = now()
+
+rate_limit_resources:
+  - label: api_limiter
+    local:
+      count: 100
+      interval: 1s
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: processed

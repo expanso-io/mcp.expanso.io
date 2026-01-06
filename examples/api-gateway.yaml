@@ -1,0 +1,36 @@
+---
+id: api-gateway
+name: API Gateway Pipeline
+description: HTTP server that receives requests and forwards to backend
+keywords:
+  - api
+  - gateway
+  - http
+  - server
+  - webhook
+  - proxy
+components:
+  inputs:
+    - http_server
+  processors:
+    - mapping
+  outputs:
+    - http_client
+bloblangPatterns:
+  - now()
+---
+input:
+  http_server:
+    address: 0.0.0.0:8080
+    path: /api
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.received_at = now()
+
+output:
+  http_client:
+    url: https://backend.example.com/process
+    verb: POST

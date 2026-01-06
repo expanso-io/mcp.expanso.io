@@ -1,0 +1,37 @@
+---
+id: string-cleaning
+name: String Cleaning and Sanitization
+description: Remove specific characters from strings using replace_all
+keywords:
+  - string
+  - clean
+  - sanitize
+  - replace
+  - remove
+  - characters
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - replace_all()
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [raw-strings]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.cleaned_string = this.raw_string.replace_all("-", "").replace_all("_", "")
+        root.topic_clean = this.topic.replace_all(".", "_")
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: cleaned-data

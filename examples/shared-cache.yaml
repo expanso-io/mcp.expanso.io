@@ -1,0 +1,59 @@
+---
+id: shared-cache
+name: Shared Cache Pattern
+description: Use shared cache across processors for deduplication
+keywords:
+  - cache
+  - shared
+  - dedupe
+  - deduplication
+  - resource
+  - memory
+  - redis
+components:
+  inputs:
+    - kafka
+  processors:
+    - cache
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - errored()
+  - deleted()
+  - parse_json()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - cache:
+        resource: dedupe_cache
+        operator: add
+        key: ${! this.id }
+        value: "1"
+        ttl: 1h
+    - mapping: |
+        root = if errored() {
+          # Already seen this ID, skip
+          deleted()
+        } else {
+          this.parse_json()
+        }
+
+cache_resources:
+  - label: dedupe_cache
+    redis:
+      url: redis://localhost:6379
+      default_ttl: 1h
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: deduplicated-events

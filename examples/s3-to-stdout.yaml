@@ -1,0 +1,36 @@
+---
+id: s3-to-stdout
+name: S3 to Stdout
+description: Read files from S3 bucket and print to stdout
+keywords:
+  - s3
+  - stdout
+  - aws
+  - read
+  - print
+  - console
+  - file
+  - bucket
+components:
+  inputs:
+    - aws_s3
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - meta()
+---
+input:
+  aws_s3:
+    bucket: my-bucket
+    prefix: data/
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.file_path = meta("s3_key")
+
+output:
+  stdout: {}

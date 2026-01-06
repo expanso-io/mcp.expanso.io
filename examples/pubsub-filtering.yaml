@@ -1,0 +1,54 @@
+---
+id: pubsub-filtering
+name: GCP Pub/Sub with Filtering
+description: Filter and route GCP Pub/Sub messages by attributes
+keywords:
+  - pubsub
+  - gcp
+  - google
+  - filter
+  - attributes
+  - route
+  - cloud
+  - messaging
+components:
+  inputs:
+    - gcp_pubsub
+  processors:
+    - mapping
+  outputs:
+    - switch
+bloblangPatterns:
+  - parse_json()
+  - meta()
+  - or()
+---
+input:
+  gcp_pubsub:
+    project: my-project
+    subscription: my-subscription
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.event_type = meta("event_type")
+        root.priority = meta("priority").or("normal")
+
+output:
+  switch:
+    cases:
+      - check: this.priority == "high"
+        output:
+          gcp_pubsub:
+            project: my-project
+            topic: high-priority
+      - check: this.event_type == "error"
+        output:
+          gcp_pubsub:
+            project: my-project
+            topic: errors
+      - output:
+          gcp_pubsub:
+            project: my-project
+            topic: standard

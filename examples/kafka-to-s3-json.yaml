@@ -1,0 +1,44 @@
+---
+id: kafka-to-s3-json
+name: Kafka to S3 with JSON Parsing
+description: Consume Kafka messages, parse JSON, and write to S3
+keywords:
+  - kafka
+  - s3
+  - json
+  - parse
+  - aws
+  - streaming
+  - etl
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - aws_s3
+bloblangPatterns:
+  - parse_json()
+  - now()
+  - timestamp_unix()
+  - uuid_v4()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - my-topic
+    consumer_group: my-group
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.data = this.value.parse_json()
+        root.timestamp = now()
+
+output:
+  aws_s3:
+    bucket: my-bucket
+    path: ${! timestamp_unix() }/${! uuid_v4() }.json

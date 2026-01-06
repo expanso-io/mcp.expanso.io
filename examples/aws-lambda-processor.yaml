@@ -1,0 +1,43 @@
+---
+id: aws-lambda-processor
+name: AWS Lambda Processor
+description: Process messages through AWS Lambda functions
+keywords:
+  - aws
+  - lambda
+  - processor
+  - serverless
+  - function
+  - transform
+components:
+  inputs:
+    - kafka
+  processors:
+    - aws_lambda
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-events
+
+pipeline:
+  processors:
+    - aws_lambda:
+        function: my-processing-function
+        region: us-east-1
+    - mapping: |
+        root = this.parse_json()
+        root.processed_by = "lambda"
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: processed-events

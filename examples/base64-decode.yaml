@@ -1,0 +1,35 @@
+---
+id: base64-decode
+name: Base64 Decoding
+description: Decode base64-encoded values in messages
+keywords:
+  - base64
+  - decode
+  - encode
+  - binary
+  - transform
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - decode("base64")
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [encoded-data]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.decoded_value = this.encoded_value.decode("base64")
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: decoded-data

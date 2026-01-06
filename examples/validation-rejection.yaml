@@ -1,0 +1,63 @@
+---
+id: validation-rejection
+name: Message Validation with Rejection
+description: Validate messages and reject malformed ones
+keywords:
+  - validate
+  - validation
+  - reject
+  - schema
+  - check
+  - filter
+  - malformed
+  - quality
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - switch
+bloblangPatterns:
+  - parse_json()
+  - let
+  - if { } else { }
+  - meta
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - incoming
+
+pipeline:
+  processors:
+    - mapping: |
+        let data = this.parse_json()
+
+        # Validate required fields
+        let valid = $data.id != null && $data.type != null && $data.payload != null
+
+        root = $data
+        meta valid = if $valid { "true" } else { "false" }
+        meta rejection_reason = if !$valid {
+          if $data.id == null { "missing id" }
+          else if $data.type == null { "missing type" }
+          else { "missing payload" }
+        } else { "" }
+
+output:
+  switch:
+    cases:
+      - check: meta("valid") == "true"
+        output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: valid-messages
+      - output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: rejected-messages

@@ -1,0 +1,36 @@
+---
+id: sns-to-sqs
+name: SNS to SQS Pipeline
+description: Fan out SNS messages to SQS queue
+keywords:
+  - sns
+  - sqs
+  - aws
+  - fanout
+  - queue
+  - pubsub
+components:
+  inputs:
+    - aws_sqs
+  processors:
+    - mapping
+  outputs:
+    - aws_sqs
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  aws_sqs:
+    url: https://sqs.us-east-1.amazonaws.com/123456789/source-queue
+    region: us-east-1
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed = true
+
+output:
+  aws_sqs:
+    url: https://sqs.us-east-1.amazonaws.com/123456789/dest-queue
+    region: us-east-1

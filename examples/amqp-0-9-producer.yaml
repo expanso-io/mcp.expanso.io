@@ -1,0 +1,43 @@
+---
+id: amqp-0-9-producer
+name: AMQP 0.9 Producer (RabbitMQ)
+description: Publish messages to RabbitMQ using AMQP 0.9.1 protocol
+keywords:
+  - amqp
+  - rabbitmq
+  - queue
+  - producer
+  - output
+  - messaging
+  - publish
+  - "0.9"
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - amqp_0_9
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.published_at = now()
+
+output:
+  amqp_0_9:
+    urls:
+      - amqp://guest:guest@localhost:5672/
+    exchange: my-exchange
+    key: my-routing-key

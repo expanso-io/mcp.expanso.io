@@ -1,0 +1,45 @@
+---
+id: sql-to-elasticsearch
+name: SQL to Elasticsearch
+description: Query SQL database and index results in Elasticsearch
+keywords:
+  - sql
+  - postgres
+  - mysql
+  - elasticsearch
+  - database
+  - search
+  - index
+components:
+  inputs:
+    - sql_select
+  processors:
+    - mapping
+  outputs:
+    - elasticsearch_v8
+bloblangPatterns:
+  - string()
+---
+input:
+  sql_select:
+    driver: postgres
+    dsn: postgres://user:pass@localhost:5432/mydb
+    table: users
+    columns:
+      - id
+      - name
+      - email
+      - created_at
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root._id = this.id.string()
+
+output:
+  elasticsearch_v8:
+    urls:
+      - http://localhost:9200
+    index: users
+    id: ${! this._id }

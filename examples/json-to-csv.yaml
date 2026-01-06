@@ -1,0 +1,39 @@
+---
+id: json-to-csv
+name: JSON to CSV Conversion
+description: Convert JSON messages to CSV format
+keywords:
+  - json
+  - csv
+  - convert
+  - transform
+  - format
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - file
+bloblangPatterns:
+  - parse_json()
+  - let
+  - join()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - json-data
+
+pipeline:
+  processors:
+    - mapping: |
+        let data = this.parse_json()
+        root = [$data.id, $data.name, $data.email, $data.created_at].join(",")
+
+output:
+  file:
+    path: /data/output.csv
+    codec: lines

@@ -1,0 +1,46 @@
+---
+id: data-enrichment
+name: Data Enrichment Pipeline
+description: Enrich data with additional information
+keywords:
+  - data
+  - enrichment
+  - enrich
+  - enhance
+  - augment
+  - lookup
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+    - http
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-data
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+    - http:
+        url: http://enrichment-service/lookup
+        verb: POST
+    - mapping: |
+        root = this.parse_json()
+        root.enriched_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: enriched-data

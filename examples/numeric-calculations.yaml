@@ -1,0 +1,39 @@
+---
+id: numeric-calculations
+name: Numeric Calculations
+description: Perform mathematical operations on message values
+keywords:
+  - math
+  - calculate
+  - multiply
+  - divide
+  - number
+  - arithmetic
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - number()
+  - arithmetic operators
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [sensor-data]
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.result = this.value.number() * 10
+        root.celsius = (this.fahrenheit.number() - 32) * 5 / 9
+        root.percentage = (this.current / this.max) * 100
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: calculated-data

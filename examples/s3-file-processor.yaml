@@ -1,0 +1,37 @@
+---
+id: s3-file-processor
+name: S3 File Processor
+description: Process files from S3 bucket
+keywords:
+  - s3
+  - file
+  - processor
+  - process
+  - aws
+  - bucket
+components:
+  inputs:
+    - aws_s3
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - meta()
+  - now()
+---
+input:
+  aws_s3:
+    bucket: my-bucket
+    prefix: incoming/
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.file_key = meta("s3_key")
+        root.processed_at = now()
+
+output:
+  stdout: {}

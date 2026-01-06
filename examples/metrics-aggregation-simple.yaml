@@ -1,0 +1,49 @@
+---
+id: metrics-aggregation-simple
+name: Simple Metrics Aggregation
+description: Aggregate metrics from Kafka and write summaries
+keywords:
+  - metrics
+  - aggregation
+  - aggregate
+  - prometheus
+  - kafka
+  - batch
+  - window
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - aws_s3
+bloblangPatterns:
+  - uuid_v4()
+  - map_each()
+  - parse_json()
+  - length()
+  - now()
+  - format_timestamp()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - metrics
+    batching:
+      count: 100
+      period: 10s
+
+pipeline:
+  processors:
+    - mapping: |
+        root.window_id = uuid_v4()
+        root.metrics = this.map_each(m -> m.parse_json())
+        root.count = this.length()
+        root.window_end = now()
+
+output:
+  aws_s3:
+    bucket: metrics-archive
+    path: ${! now().format_timestamp("2006/01/02") }/${! this.window_id }.json

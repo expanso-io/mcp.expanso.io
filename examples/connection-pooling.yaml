@@ -1,0 +1,48 @@
+---
+id: connection-pooling
+name: HTTP Connection Pooling
+description: Configure connection pooling for HTTP outputs
+keywords:
+  - connection
+  - pool
+  - pooling
+  - http
+  - performance
+  - concurrent
+  - optimization
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - http_client
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  http_client:
+    url: https://api.example.com/ingest
+    verb: POST
+    headers:
+      Content-Type: application/json
+    max_in_flight: 64
+    batching:
+      count: 100
+      period: 1s
+    timeout: 30s
+    retry_period: 1s
+    max_retry_backoff: 30s
+    retries: 3

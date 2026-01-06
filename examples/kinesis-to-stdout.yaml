@@ -1,0 +1,35 @@
+---
+id: kinesis-to-stdout
+name: Kinesis Stream Processor
+description: Read from AWS Kinesis stream and process messages
+keywords:
+  - kinesis
+  - aws
+  - stream
+  - processor
+  - streaming
+  - real-time
+components:
+  inputs:
+    - aws_kinesis
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  aws_kinesis:
+    stream: my-stream
+    dynamodb_table: kinesis_checkpoints
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed_at = now()
+
+output:
+  stdout: {}

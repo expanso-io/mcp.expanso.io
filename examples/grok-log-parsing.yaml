@@ -1,0 +1,40 @@
+---
+id: grok-log-parsing
+name: Log Parsing with Grok
+description: Parse log files using grok patterns
+keywords:
+  - grok
+  - log
+  - parsing
+  - parse
+  - regex
+  - pattern
+  - extract
+components:
+  inputs:
+    - file
+  processors:
+    - grok
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - now()
+---
+input:
+  file:
+    paths:
+      - /var/log/app.log
+    codec: lines
+
+pipeline:
+  processors:
+    - grok:
+        expressions:
+          - '%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} %{GREEDYDATA:message}'
+    - mapping: |
+        root = this
+        root.parsed_at = now()
+
+output:
+  stdout: {}

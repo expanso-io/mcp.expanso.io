@@ -1,0 +1,40 @@
+---
+id: gcp-pubsub-publish
+name: GCP Pub/Sub Publisher
+description: Publish messages to Google Cloud Pub/Sub topics
+keywords:
+  - gcp
+  - google
+  - pubsub
+  - publish
+  - output
+  - messaging
+  - topic
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - gcp_pubsub
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.published_at = now()
+
+output:
+  gcp_pubsub:
+    project: my-project
+    topic: my-topic

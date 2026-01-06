@@ -1,0 +1,38 @@
+---
+id: random-number-generation
+name: Random Number Generation
+description: Generate random numbers for testing or validation
+keywords:
+  - random
+  - number
+  - generate
+  - test
+  - validation
+components:
+  inputs:
+    - generate
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - random_int()
+  - timestamp_unix_nano()
+  - floor()
+---
+input:
+  generate:
+    count: 100
+    interval: 100ms
+    mapping: |
+      root = {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root.random_number = random_int(max: 100)
+        root.random_float = random_int(max: 10000) / 100
+        root.timestamp_ms = (timestamp_unix_nano() / 1000000).floor()
+
+output:
+  stdout: {}

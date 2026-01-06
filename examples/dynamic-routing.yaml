@@ -1,0 +1,68 @@
+---
+id: dynamic-routing
+name: Dynamic Output Selection
+description: Dynamically select output based on message content
+keywords:
+  - dynamic
+  - routing
+  - output
+  - select
+  - variable
+  - destination
+  - runtime
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - dynamic
+bloblangPatterns:
+  - parse_json()
+  - let
+  - match
+  - meta
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        let event = this.parse_json()
+        root = $event
+        # Set dynamic output based on region
+        meta output_target = match $event.region {
+          "us" => "kafka_us"
+          "eu" => "kafka_eu"
+          "asia" => "kafka_asia"
+          _ => "kafka_default"
+        }
+
+output:
+  dynamic:
+    outputs:
+      kafka_us:
+        kafka:
+          addresses:
+            - us-kafka:9092
+          topic: regional-events
+      kafka_eu:
+        kafka:
+          addresses:
+            - eu-kafka:9092
+          topic: regional-events
+      kafka_asia:
+        kafka:
+          addresses:
+            - asia-kafka:9092
+          topic: regional-events
+      kafka_default:
+        kafka:
+          addresses:
+            - localhost:9092
+          topic: unrouted-events

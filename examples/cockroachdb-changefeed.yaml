@@ -1,0 +1,43 @@
+---
+id: cockroachdb-changefeed
+name: CockroachDB Changefeed
+description: Process CockroachDB changefeed events
+keywords:
+  - cockroachdb
+  - changefeed
+  - cdc
+  - distributed
+  - sql
+  - streaming
+  - change
+components:
+  inputs:
+    - cockroachdb_changefeed
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - string()
+  - if { } else { }
+---
+input:
+  cockroachdb_changefeed:
+    dsn: postgres://root@localhost:26257/mydb
+    tables:
+      - transactions
+    cursor_cache: file://./cursor.txt
+
+pipeline:
+  processors:
+    - mapping: |
+        root.id = this.key.string()
+        root.payload = this.value
+        root.timestamp = this.updated.string()
+        root.operation = if this.value == null { "delete" } else { "upsert" }
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: transaction-changes

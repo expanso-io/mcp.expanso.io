@@ -1,0 +1,41 @@
+---
+id: ollama-chat
+name: Local LLM Chat with Ollama
+description: Process messages through local Ollama LLM
+keywords:
+  - ollama
+  - llm
+  - chat
+  - ai
+  - local
+  - inference
+components:
+  inputs:
+    - http_server
+  processors:
+    - ollama_chat
+    - mapping
+  outputs:
+    - sync_response
+bloblangPatterns: []
+---
+input:
+  http_server:
+    address: 0.0.0.0:8080
+    path: /chat
+    allowed_verbs:
+      - POST
+
+pipeline:
+  processors:
+    - mapping: |
+        root.prompt = this.message
+    - ollama_chat:
+        server_address: http://localhost:11434
+        model: llama3.2
+    - mapping: |
+        root.response = this.response
+        root.model = "llama3.2"
+
+output:
+  sync_response: {}

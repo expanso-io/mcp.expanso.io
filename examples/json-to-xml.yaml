@@ -1,0 +1,34 @@
+---
+id: json-to-xml
+name: JSON to XML Conversion
+description: Convert JSON objects to XML format
+keywords:
+  - json
+  - xml
+  - convert
+  - format
+  - transform
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - format_xml()
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [json-data]
+
+pipeline:
+  processors:
+    - mapping: |
+        root.xml_data = this.json_data.format_xml()
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: xml-data

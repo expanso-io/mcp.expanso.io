@@ -1,0 +1,40 @@
+---
+id: kafka-offset
+name: Kafka Offset Management
+description: Manage Kafka consumer offsets
+keywords:
+  - kafka
+  - offset
+  - management
+  - consumer
+  - commit
+  - position
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - meta()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - my-topic
+    consumer_group: offset-manager
+    start_from_oldest: true
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.offset = meta("kafka_offset")
+        root.partition = meta("kafka_partition")
+
+output:
+  stdout: {}

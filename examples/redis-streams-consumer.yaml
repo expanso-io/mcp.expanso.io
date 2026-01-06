@@ -1,0 +1,46 @@
+---
+id: redis-streams-consumer
+name: Redis Streams Consumer Group
+description: Process Redis Streams with consumer groups
+keywords:
+  - redis
+  - streams
+  - consumer
+  - group
+  - queue
+  - distributed
+  - messaging
+components:
+  inputs:
+    - redis_streams
+  processors:
+    - mapping
+  outputs:
+    - redis_streams
+bloblangPatterns:
+  - parse_json()
+  - env()
+  - now()
+---
+input:
+  redis_streams:
+    url: redis://localhost:6379
+    body_key: body
+    streams:
+      - stream: orders:new
+        consumer_group: order-processor
+        consumer_name: worker-1
+        start_from_oldest: true
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed_by = env("HOSTNAME")
+        root.processed_at = now()
+
+output:
+  redis_streams:
+    url: redis://localhost:6379
+    stream: orders:processed
+    max_length: 10000

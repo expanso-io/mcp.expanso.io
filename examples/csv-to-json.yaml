@@ -1,0 +1,36 @@
+---
+id: csv-to-json
+name: CSV to JSON Converter
+description: Read CSV files and convert to JSON format
+keywords:
+  - csv
+  - json
+  - convert
+  - converter
+  - parse
+  - transform
+  - file
+components:
+  inputs:
+    - file
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - now()
+---
+input:
+  file:
+    paths:
+      - /data/*.csv
+    codec: csv
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.converted_at = now()
+
+output:
+  stdout: {}

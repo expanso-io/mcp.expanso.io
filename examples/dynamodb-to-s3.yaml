@@ -1,0 +1,37 @@
+---
+id: dynamodb-to-s3
+name: DynamoDB to S3
+description: Scan DynamoDB table and write to S3
+keywords:
+  - dynamodb
+  - s3
+  - aws
+  - database
+  - backup
+  - export
+components:
+  inputs:
+    - aws_dynamodb
+  processors:
+    - mapping
+  outputs:
+    - aws_s3
+bloblangPatterns:
+  - now()
+  - timestamp_unix()
+---
+input:
+  aws_dynamodb:
+    table: my-table
+    region: us-east-1
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.exported_at = now()
+
+output:
+  aws_s3:
+    bucket: my-backup-bucket
+    path: dynamodb/${! timestamp_unix() }.json

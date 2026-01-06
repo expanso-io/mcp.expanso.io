@@ -1,0 +1,55 @@
+---
+id: batch-window-processing
+name: Batch Window Processing
+description: Process messages in time-based or count-based windows
+keywords:
+  - batch
+  - window
+  - time
+  - count
+  - aggregate
+  - group
+  - buffer
+  - collect
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - aws_s3
+bloblangPatterns:
+  - map_each()
+  - parse_json()
+  - uuid_v4()
+  - length()
+  - index()
+  - now()
+  - format_timestamp()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    batching:
+      count: 1000
+      period: 60s
+      processors:
+        - mapping: |
+            root = this.map_each(e -> e.parse_json())
+
+pipeline:
+  processors:
+    - mapping: |
+        root.window_id = uuid_v4()
+        root.events = this
+        root.event_count = this.length()
+        root.window_start = this.index(0).timestamp
+        root.window_end = now()
+
+output:
+  aws_s3:
+    bucket: event-windows
+    path: ${! now().format_timestamp("2006/01/02/15") }/${! this.window_id }.json

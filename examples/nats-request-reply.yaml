@@ -1,0 +1,52 @@
+---
+id: nats-request-reply
+name: NATS Request-Reply
+description: Implement request-reply pattern with NATS
+keywords:
+  - nats
+  - request
+  - reply
+  - rpc
+  - sync
+  - pattern
+  - messaging
+  - queue
+components:
+  inputs:
+    - nats
+  processors:
+    - mapping
+    - nats_request_reply
+  outputs:
+    - nats
+bloblangPatterns:
+  - uuid_v4()
+  - parse_json()
+  - now()
+---
+input:
+  nats:
+    urls:
+      - nats://localhost:4222
+    subject: requests
+
+pipeline:
+  processors:
+    - mapping: |
+        root.request_id = uuid_v4()
+        root.payload = this.parse_json()
+    - nats_request_reply:
+        urls:
+          - nats://localhost:4222
+        subject: backend.process
+        timeout: 5s
+    - mapping: |
+        root.request_id = this.request_id
+        root.response = this.parse_json()
+        root.completed_at = now()
+
+output:
+  nats:
+    urls:
+      - nats://localhost:4222
+    subject: responses

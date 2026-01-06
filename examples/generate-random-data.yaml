@@ -1,0 +1,46 @@
+---
+id: generate-random-data
+name: Generate Random Test Data
+description: Generate random test data with multiple transformations
+keywords:
+  - generate
+  - random
+  - test
+  - data
+  - stdout
+  - transform
+  - hash
+components:
+  inputs:
+    - generate
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - uuid_v4()
+  - now()
+  - random_int()
+  - hash()
+  - encode()
+  - slice()
+---
+input:
+  generate:
+    count: 0
+    interval: 500ms
+    mapping: |
+      root.id = uuid_v4()
+
+pipeline:
+  processors:
+    - mapping: |
+        root.id = this.id
+        root.created_at = now()
+        root.random_number = random_int(max: 1000)
+    - mapping: |
+        root.hash = root.id.hash("sha256").encode("hex").slice(0, 16)
+        root.is_even = root.random_number % 2 == 0
+
+output:
+  stdout: {}

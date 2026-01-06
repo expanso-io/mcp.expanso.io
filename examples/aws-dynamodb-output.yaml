@@ -1,0 +1,44 @@
+---
+id: aws-dynamodb-output
+name: AWS DynamoDB Writer
+description: Write data to AWS DynamoDB table
+keywords:
+  - aws
+  - dynamodb
+  - write
+  - database
+  - nosql
+  - put
+  - item
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - aws_dynamodb
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - users
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.updated_at = now()
+
+output:
+  aws_dynamodb:
+    table: users
+    region: us-east-1
+    string_columns:
+      id: ${! this.id }
+      name: ${! this.name }
+      email: ${! this.email }

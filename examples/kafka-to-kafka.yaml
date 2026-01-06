@@ -1,0 +1,40 @@
+---
+id: kafka-to-kafka
+name: Kafka to Kafka Transform
+description: Read from one Kafka topic, transform, and write to another
+keywords:
+  - kafka
+  - transform
+  - topic
+  - streaming
+  - etl
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed = true
+        root.timestamp = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: processed-events

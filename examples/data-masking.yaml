@@ -1,0 +1,44 @@
+---
+id: data-masking
+name: Data Masking Pipeline
+description: Mask sensitive data fields for privacy
+keywords:
+  - data
+  - masking
+  - mask
+  - pii
+  - privacy
+  - redact
+  - sensitive
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+  - re_replace_all()
+  - slice()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-data
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.email = this.email.re_replace_all("(.).*@", "$1***@")
+        root.phone = "***-***-" + this.phone.slice(-4)
+        root.ssn = "***-**-" + this.ssn.slice(-4)
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: masked-data

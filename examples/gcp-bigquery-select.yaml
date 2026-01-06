@@ -1,0 +1,41 @@
+---
+id: gcp-bigquery-select
+name: GCP BigQuery Select
+description: Query data from Google BigQuery tables
+keywords:
+  - gcp
+  - google
+  - bigquery
+  - query
+  - select
+  - sql
+  - input
+  - warehouse
+components:
+  inputs:
+    - gcp_bigquery_select
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - now()
+---
+input:
+  gcp_bigquery_select:
+    project: my-project
+    table: mydataset.events
+    columns:
+      - id
+      - name
+      - timestamp
+    where: timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY)
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.queried_at = now()
+
+output:
+  stdout: {}

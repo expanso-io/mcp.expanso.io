@@ -1,0 +1,42 @@
+---
+id: s3-to-bigquery
+name: S3 to BigQuery
+description: Load S3 files into Google BigQuery
+keywords:
+  - s3
+  - bigquery
+  - gcp
+  - aws
+  - cloud
+  - data
+  - lake
+  - warehouse
+components:
+  inputs:
+    - aws_s3
+  processors:
+    - mapping
+  outputs:
+    - gcp_bigquery
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  aws_s3:
+    bucket: data-lake
+    prefix: raw/
+    scanner:
+      to: latest
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root._ingested_at = now()
+
+output:
+  gcp_bigquery:
+    project: my-project
+    dataset: analytics
+    table: events

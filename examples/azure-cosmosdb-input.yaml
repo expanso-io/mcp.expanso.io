@@ -1,0 +1,40 @@
+---
+id: azure-cosmosdb-input
+name: Azure CosmosDB Input
+description: Read documents from Azure CosmosDB
+keywords:
+  - azure
+  - cosmosdb
+  - cosmos
+  - database
+  - nosql
+  - input
+  - read
+  - microsoft
+components:
+  inputs:
+    - azure_cosmosdb
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - now()
+  - env()
+---
+input:
+  azure_cosmosdb:
+    endpoint: https://mycosmosaccount.documents.azure.com:443
+    account_key: ${! env("COSMOSDB_KEY") }
+    database: mydb
+    container: events
+    partition_keys_map: root = this.id
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.read_at = now()
+
+output:
+  stdout: {}

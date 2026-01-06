@@ -1,0 +1,35 @@
+---
+id: field-extraction
+name: Field Extraction Pipeline
+description: Extract and transform specific fields from JSON data
+keywords:
+  - field
+  - extraction
+  - extract
+  - fields
+  - select
+  - transform
+  - mapping
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - now()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root.user_id = this.id
+        root.name = this.user.name
+        root.email = this.user.email
+        root.extracted_at = now()
+
+output:
+  stdout: {}

@@ -1,0 +1,37 @@
+---
+id: azure-table-storage-input
+name: Azure Table Storage Input
+description: Read entities from Azure Table Storage
+keywords:
+  - azure
+  - table
+  - storage
+  - input
+  - read
+  - entities
+  - microsoft
+components:
+  inputs:
+    - azure_table_storage
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - now()
+  - env()
+---
+input:
+  azure_table_storage:
+    storage_account: mystorageaccount
+    storage_access_key: ${! env("AZURE_STORAGE_KEY") }
+    table_name: mytable
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.read_at = now()
+
+output:
+  stdout: {}

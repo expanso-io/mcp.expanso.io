@@ -1,0 +1,44 @@
+---
+id: generate-uuid-stdout
+name: Generate UUIDs to Stdout
+description: Generate random UUIDs and print to standard output
+keywords:
+  - generate
+  - uuid
+  - stdout
+  - random
+  - test
+  - debug
+  - print
+  - console
+components:
+  inputs:
+    - generate
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - uuid_v4()
+  - now()
+  - format_timestamp()
+  - ts_unix()
+---
+input:
+  generate:
+    count: 10
+    interval: 1s
+    mapping: |
+      root = {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root.uuid = uuid_v4()
+        root.timestamp = now()
+    - mapping: |
+        root.formatted = root.timestamp.format_timestamp("2006-01-02T15:04:05Z07:00")
+        root.unix = root.timestamp.ts_unix()
+
+output:
+  stdout: {}

@@ -1,0 +1,47 @@
+---
+id: azure-cosmosdb-output
+name: Azure CosmosDB Output
+description: Write documents to Azure CosmosDB
+keywords:
+  - azure
+  - cosmosdb
+  - cosmos
+  - database
+  - nosql
+  - output
+  - write
+  - microsoft
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - azure_cosmosdb
+bloblangPatterns:
+  - parse_json()
+  - now()
+  - env()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.id = this.event_id
+        root.stored_at = now()
+
+output:
+  azure_cosmosdb:
+    endpoint: https://mycosmosaccount.documents.azure.com:443
+    account_key: ${! env("COSMOSDB_KEY") }
+    database: mydb
+    container: events
+    partition_keys_map: root = this.id
+    operation: create

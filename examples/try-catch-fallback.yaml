@@ -1,0 +1,54 @@
+---
+id: try-catch-fallback
+name: Try-Catch with Fallback Processing
+description: Handle errors with fallback logic using try/catch
+keywords:
+  - try
+  - catch
+  - fallback
+  - error
+  - handling
+  - graceful
+  - degradation
+  - recovery
+components:
+  inputs:
+    - kafka
+  processors:
+    - try
+    - catch
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+  - error()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - try:
+        - mapping: |
+            root = this.parse_json()
+            root.validated = true
+    - catch:
+        - mapping: |
+            # Fallback: keep original as string if JSON parsing fails
+            root.raw_data = this
+            root.validated = false
+            root.parse_error = error()
+    - mapping: |
+        root.processed_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: validated-events

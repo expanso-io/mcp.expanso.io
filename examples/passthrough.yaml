@@ -1,0 +1,32 @@
+---
+id: passthrough
+name: Passthrough Pipeline
+description: Simple passthrough that echoes input to output
+keywords:
+  - passthrough
+  - pass
+  - through
+  - echo
+  - simple
+  - basic
+  - identity
+  - noop
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns: []
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+
+output:
+  stdout: {}

@@ -1,0 +1,35 @@
+---
+id: http-client-stdout
+name: HTTP Client to Stdout
+description: Fetch data from HTTP endpoint and print to stdout
+keywords:
+  - http
+  - client
+  - stdout
+  - api
+  - fetch
+  - get
+  - request
+components:
+  inputs:
+    - http_client
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  http_client:
+    url: https://api.example.com/data
+    verb: GET
+    rate_limit: 1s
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  stdout: {}

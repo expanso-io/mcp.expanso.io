@@ -1,0 +1,55 @@
+---
+id: state-machine-mapping
+name: State Machine Mapping (Weihenstephaner)
+description: Map machine states to standardized state codes
+keywords:
+  - state
+  - machine
+  - weihenstephaner
+  - packml
+  - mapping
+  - oee
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - match expression
+  - exists()
+  - deleted()
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [machine-state]
+
+pipeline:
+  processors:
+    - mapping: |
+        if this.exists("machine_state_code") {
+          root = {
+            "start_time_unix_ms": this.timestamp_ms,
+            "state": match this.machine_state_code {
+              0 => 30000,
+              1 => 40000,
+              2 => 20000,
+              4 => 40000,
+              8 => 60000,
+              16 => 70000,
+              32 => 80000,
+              64 => 80000,
+              128 => 10000,
+              _ => 0
+            }
+          }
+        } else {
+          root = deleted()
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: standardized-state

@@ -1,0 +1,51 @@
+---
+id: http-camera-capture
+name: HTTP Camera Image Capture
+description: Capture images from network camera and encode to base64
+keywords:
+  - http
+  - camera
+  - image
+  - capture
+  - base64
+  - thermal
+components:
+  inputs:
+    - http_client
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - content()
+  - encode("base64")
+  - rate_limit_resources
+---
+input:
+  http_client:
+    url: http://camera-ip-address/snapshot.jpg
+    verb: GET
+    rate_limit: webcam_frequency
+    timeout: 5s
+    retries: 3
+
+pipeline:
+  processors:
+    - mapping: |
+        let image_base64 = content().encode("base64").string()
+        let timestamp = (timestamp_unix_nano() / 1000000).floor()
+        root = {
+          "timestamp_ms": $timestamp,
+          "image_base64": $image_base64
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: camera-images
+
+rate_limit_resources:
+  - label: webcam_frequency
+    local:
+      count: 1
+      interval: 1s

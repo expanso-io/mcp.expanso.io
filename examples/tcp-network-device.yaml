@@ -1,0 +1,59 @@
+---
+id: tcp-network-device
+name: TCP Network Device Communication
+description: Communicate with network devices (scales, sensors) via TCP
+keywords:
+  - tcp
+  - network
+  - device
+  - scale
+  - sensor
+  - netcat
+  - command
+components:
+  inputs:
+    - generate
+  processors:
+    - command
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - content()
+  - starts_with()
+  - trim_prefix()
+  - trim_suffix()
+  - re_replace_all()
+---
+input:
+  generate:
+    interval: 1s
+    mapping: |
+      root = "SI\r\n"
+
+pipeline:
+  processors:
+    - command:
+        name: nc
+        args_mapping: '["10.117.216.80", "8000"]'
+    - mapping: |
+        if content().string().starts_with("SS") {
+          let weight = content()
+            .replace_all(" ", "")
+            .trim_prefix("SS")
+            .trim_suffix("g\r\n")
+            .number()
+          let unit = content().string().re_replace_all("[^a-zA-Z]", "")
+          root = {
+            "value": $weight,
+            "timestamp_ms": (timestamp_unix_nano() / 1000000).floor(),
+            "unit": $unit
+          }
+        } else {
+          root = deleted()
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: scale-readings

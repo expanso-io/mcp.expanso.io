@@ -1,0 +1,55 @@
+---
+id: fan-out-fan-in
+name: Fan-Out Fan-In Pattern
+description: Split message, process branches in parallel, merge results
+keywords:
+  - parallel
+  - fan
+  - out
+  - in
+  - branch
+  - merge
+  - concurrent
+  - split
+  - workflow
+components:
+  inputs:
+    - kafka
+  processors:
+    - branch
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - orders
+
+pipeline:
+  processors:
+    - branch:
+        request_map: 'root = this'
+        processors:
+          - mapping: |
+              root.enriched_user = {"lookup": "user", "id": this.user_id}
+        result_map: 'root.user_data = this.enriched_user'
+    - branch:
+        request_map: 'root = this'
+        processors:
+          - mapping: |
+              root.enriched_product = {"lookup": "product", "id": this.product_id}
+        result_map: 'root.product_data = this.enriched_product'
+    - mapping: |
+        root = this
+        root.enriched_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: enriched-orders

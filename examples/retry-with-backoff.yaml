@@ -1,0 +1,57 @@
+---
+id: retry-with-backoff
+name: Retry with Exponential Backoff
+description: Retry failed operations with exponential backoff
+keywords:
+  - retry
+  - backoff
+  - exponential
+  - error
+  - resilience
+  - fault
+  - tolerance
+  - recover
+  - failure
+components:
+  inputs:
+    - kafka
+  processors:
+    - retry
+    - http
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - orders
+
+pipeline:
+  processors:
+    - retry:
+        max_retries: 5
+        backoff:
+          initial_interval: 1s
+          max_interval: 30s
+          max_elapsed_time: 5m
+        processors:
+          - http:
+              url: https://api.example.com/process
+              verb: POST
+              headers:
+                Content-Type: application/json
+    - mapping: |
+        root = this.parse_json()
+        root.processed_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: processed-orders

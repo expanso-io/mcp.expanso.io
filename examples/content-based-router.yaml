@@ -1,0 +1,65 @@
+---
+id: content-based-router
+name: Content-Based Router
+description: Route messages based on content fields using switch
+keywords:
+  - router
+  - routing
+  - switch
+  - content
+  - based
+  - conditional
+  - branch
+  - dispatch
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - switch
+bloblangPatterns:
+  - parse_json()
+  - let
+  - meta
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        let event = this.parse_json()
+        root = $event
+        meta event_type = $event.type
+
+output:
+  switch:
+    cases:
+      - check: meta("event_type") == "order"
+        output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: orders
+      - check: meta("event_type") == "payment"
+        output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: payments
+      - check: meta("event_type") == "shipment"
+        output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: shipments
+      - output:
+          kafka:
+            addresses:
+              - localhost:9092
+            topic: other-events

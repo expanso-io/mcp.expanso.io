@@ -1,0 +1,49 @@
+---
+id: rabbitmq-fanout
+name: RabbitMQ Fanout Pattern
+description: Consume from RabbitMQ and fan-out to multiple queues
+keywords:
+  - rabbitmq
+  - amqp
+  - fanout
+  - exchange
+  - broadcast
+  - pubsub
+components:
+  inputs:
+    - amqp_0_9
+  processors:
+    - mapping
+  outputs:
+    - broker
+    - amqp_0_9
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  amqp_0_9:
+    urls:
+      - amqp://guest:guest@localhost:5672/
+    queue: source-queue
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.distributed_at = now()
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - amqp_0_9:
+          urls:
+            - amqp://guest:guest@localhost:5672/
+          exchange: fanout-exchange
+          key: queue-1
+      - amqp_0_9:
+          urls:
+            - amqp://guest:guest@localhost:5672/
+          exchange: fanout-exchange
+          key: queue-2

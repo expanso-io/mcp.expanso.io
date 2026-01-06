@@ -1,0 +1,57 @@
+---
+id: mysql-cdc-to-elasticsearch
+name: MySQL CDC to Elasticsearch
+description: Stream MySQL changes to Elasticsearch for search indexing
+keywords:
+  - mysql
+  - cdc
+  - elasticsearch
+  - search
+  - index
+  - binlog
+  - replication
+  - sync
+components:
+  inputs:
+    - mysql_cdc
+  processors:
+    - mapping
+  outputs:
+    - elasticsearch_v8
+bloblangPatterns:
+  - match
+  - string()
+  - now()
+  - or()
+---
+input:
+  mysql_cdc:
+    dsn: user:pass@tcp(localhost:3306)/mydb
+    tables:
+      - products
+    snapshot_mode: initial
+
+pipeline:
+  processors:
+    - mapping: |
+        root = match this.operation {
+          "delete" => {
+            "_op_type": "delete",
+            "_id": this.before.id.string()
+          }
+          _ => {
+            "_id": this.after.id.string(),
+            "name": this.after.name,
+            "description": this.after.description,
+            "price": this.after.price,
+            "updated_at": now()
+          }
+        }
+
+output:
+  elasticsearch_v8:
+    urls:
+      - http://localhost:9200
+    index: products
+    id: ${! this._id }
+    action: ${! this._op_type.or("index") }

@@ -1,0 +1,47 @@
+---
+id: array-average
+name: Array Average Calculation
+description: Calculate average of numerical values in an array
+keywords:
+  - array
+  - average
+  - sum
+  - length
+  - calculate
+  - aggregate
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - sum()
+  - length()
+  - min()
+  - max()
+---
+input:
+  kafka:
+    addresses: [localhost:9092]
+    topics: [measurements]
+
+pipeline:
+  processors:
+    - mapping: |
+        let values = this.measurements
+        let total = $values.sum()
+        let count = $values.length()
+        let average = $total / $count
+        root = {
+          "timestamp_ms": (timestamp_unix_nano() / 1000000).floor(),
+          "average_measurement": $average,
+          "min": $values.min(),
+          "max": $values.max()
+        }
+
+output:
+  kafka:
+    addresses: [localhost:9092]
+    topic: statistics

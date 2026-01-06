@@ -1,0 +1,47 @@
+---
+id: batch-aggregation
+name: Batch Aggregation
+description: Aggregate messages into batches with time windows
+keywords:
+  - batch
+  - aggregate
+  - window
+  - time
+  - group
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - aws_s3
+bloblangPatterns:
+  - uuid_v4()
+  - map_each()
+  - parse_json()
+  - length()
+  - now()
+  - format_timestamp()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    batching:
+      count: 100
+      period: 10s
+
+pipeline:
+  processors:
+    - mapping: |
+        root.batch_id = uuid_v4()
+        root.events = this.map_each(e -> e.parse_json())
+        root.count = this.length()
+        root.timestamp = now()
+
+output:
+  aws_s3:
+    bucket: event-batches
+    path: ${! now().format_timestamp("2006/01/02") }/${! this.batch_id }.json

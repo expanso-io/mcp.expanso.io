@@ -1,0 +1,43 @@
+---
+id: gcp-cloud-storage-output
+name: GCP Cloud Storage Output
+description: Write objects to Google Cloud Storage buckets
+keywords:
+  - gcp
+  - google
+  - cloud
+  - storage
+  - gcs
+  - bucket
+  - output
+  - write
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - gcp_cloud_storage
+bloblangPatterns:
+  - parse_json()
+  - now()
+  - format_timestamp()
+  - uuid_v4()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.archived_at = now()
+
+output:
+  gcp_cloud_storage:
+    bucket: my-bucket
+    path: ${! now().format_timestamp("2006/01/02") }/${! uuid_v4() }.json

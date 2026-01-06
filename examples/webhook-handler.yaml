@@ -1,0 +1,39 @@
+---
+id: webhook-handler
+name: Webhook Event Handler
+description: Receive webhook events and process them
+keywords:
+  - webhook
+  - event
+  - handler
+  - http
+  - server
+  - callback
+components:
+  inputs:
+    - http_server
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - uuid_v4()
+  - now()
+---
+input:
+  http_server:
+    address: 0.0.0.0:8080
+    path: /webhook
+    allowed_verbs:
+      - POST
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.event_id = uuid_v4()
+        root.received_at = now()
+
+output:
+  stdout: {}

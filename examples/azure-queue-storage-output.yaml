@@ -1,0 +1,42 @@
+---
+id: azure-queue-storage-output
+name: Azure Queue Storage Output
+description: Send messages to Azure Queue Storage
+keywords:
+  - azure
+  - queue
+  - storage
+  - output
+  - send
+  - messages
+  - microsoft
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - azure_queue_storage
+bloblangPatterns:
+  - parse_json()
+  - now()
+  - env()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.queued_at = now()
+
+output:
+  azure_queue_storage:
+    storage_account: mystorageaccount
+    storage_access_key: ${! env("AZURE_STORAGE_KEY") }
+    queue_name: processed-events

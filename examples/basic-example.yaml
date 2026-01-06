@@ -1,0 +1,38 @@
+---
+id: basic-example
+name: Basic Pipeline Example
+description: A basic example pipeline that reads, processes, and outputs data
+keywords:
+  - basic
+  - example
+  - simple
+  - starter
+  - template
+  - demo
+components:
+  inputs:
+    - generate
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - uuid_v4()
+  - now()
+---
+input:
+  generate:
+    count: 10
+    interval: 1s
+    mapping: |
+      root.id = uuid_v4()
+      root.timestamp = now()
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.processed = true
+
+output:
+  stdout: {}

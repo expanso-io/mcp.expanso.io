@@ -1,0 +1,35 @@
+---
+id: lambda-trigger
+name: Lambda Trigger Pipeline
+description: Pipeline triggered by AWS Lambda events
+keywords:
+  - lambda
+  - trigger
+  - aws
+  - serverless
+  - event
+  - function
+components:
+  inputs:
+    - aws_sqs
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  aws_sqs:
+    url: https://sqs.us-east-1.amazonaws.com/123456789/lambda-trigger-queue
+    region: us-east-1
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.triggered_at = now()
+
+output:
+  stdout: {}
