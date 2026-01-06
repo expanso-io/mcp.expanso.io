@@ -1,0 +1,35 @@
+---
+id: parquet-reader
+name: Parquet File Reader
+description: Read and decode Parquet files into structured messages
+keywords:
+  - parquet
+  - file
+  - input
+  - read
+  - columnar
+  - analytics
+components:
+  inputs:
+    - parquet
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - json()
+---
+input:
+  parquet:
+    paths:
+      - /data/analytics/*.parquet
+    batch_count: 100
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.source_file = @path
+
+output:
+  stdout: {}

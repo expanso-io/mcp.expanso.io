@@ -1,0 +1,36 @@
+---
+id: csv-input
+name: CSV File Input
+description: Read CSV files as structured records
+keywords:
+  - csv
+  - file
+  - input
+  - read
+  - structured
+components:
+  inputs:
+    - csv
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - json()
+---
+input:
+  csv:
+    paths:
+      - /data/*.csv
+    parse_header_row: true
+    delimiter: ','
+    batch_count: 100
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.source = @path
+
+output:
+  stdout: {}

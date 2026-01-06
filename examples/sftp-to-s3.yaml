@@ -1,0 +1,42 @@
+---
+id: sftp-to-s3
+name: SFTP to S3 Sync
+description: Sync files from SFTP server to AWS S3
+keywords:
+  - sftp
+  - s3
+  - sync
+  - file
+  - aws
+  - transfer
+components:
+  inputs:
+    - sftp
+  processors:
+    - mapping
+  outputs:
+    - aws_s3
+bloblangPatterns: []
+---
+input:
+  sftp:
+    address: sftp.example.com:22
+    credentials:
+      username: user
+      private_key_file: /path/to/key
+    paths:
+      - /data/**/*.csv
+    delete_on_finish: true
+    watcher:
+      enabled: true
+      poll_interval: 1m
+
+pipeline:
+  processors:
+    - mapping: |
+        meta s3_key = @sftp_path.trim_prefix("/data/")
+
+output:
+  aws_s3:
+    bucket: my-bucket
+    path: incoming/${! @s3_key }

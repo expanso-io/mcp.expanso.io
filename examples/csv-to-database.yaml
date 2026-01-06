@@ -1,0 +1,50 @@
+---
+id: csv-to-database
+name: CSV to Database Import
+description: Import CSV files into PostgreSQL database
+keywords:
+  - csv
+  - database
+  - postgres
+  - import
+  - etl
+  - sql
+components:
+  inputs:
+    - csv
+  processors:
+    - mapping
+  outputs:
+    - sql_insert
+bloblangPatterns:
+  - now()
+---
+input:
+  csv:
+    paths:
+      - /data/imports/*.csv
+    parse_header_row: true
+    delete_on_finish: true
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.imported_at = now()
+
+output:
+  sql_insert:
+    driver: postgres
+    dsn: postgres://user:password@localhost:5432/mydb?sslmode=disable
+    table: imported_data
+    columns: [ name, email, value, imported_at ]
+    args_mapping: |
+      root = [
+        this.name,
+        this.email,
+        this.value,
+        this.imported_at
+      ]
+    batching:
+      count: 500
+      period: 1s

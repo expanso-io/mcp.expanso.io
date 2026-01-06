@@ -1,0 +1,42 @@
+---
+id: sftp-consumer
+name: SFTP File Consumer
+description: Consume files from SFTP server with glob patterns
+keywords:
+  - sftp
+  - file
+  - input
+  - remote
+  - ssh
+components:
+  inputs:
+    - sftp
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  sftp:
+    address: sftp.example.com:22
+    credentials:
+      username: user
+      password: ${SFTP_PASSWORD}
+    paths:
+      - /uploads/*.json
+    delete_on_finish: false
+    watcher:
+      enabled: true
+      minimum_age: 10s
+      poll_interval: 30s
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.sftp_path = @sftp_path
+
+output:
+  stdout: {}

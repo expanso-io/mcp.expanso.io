@@ -1,0 +1,36 @@
+---
+id: parquet-to-json
+name: Parquet to JSON Lines
+description: Convert Parquet files to JSON Lines format
+keywords:
+  - parquet
+  - json
+  - file
+  - convert
+  - etl
+  - analytics
+components:
+  inputs:
+    - parquet
+  processors:
+    - mapping
+  outputs:
+    - file
+bloblangPatterns:
+  - json()
+---
+input:
+  parquet:
+    paths:
+      - /data/input/*.parquet
+    batch_count: 100
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+
+output:
+  file:
+    path: /data/output/data.jsonl
+    codec: lines

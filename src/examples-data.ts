@@ -1118,6 +1118,61 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
     "yaml": "input:\n  kafka:\n    addresses:\n      - localhost:9092\n    topics:\n      - user-content\n\npipeline:\n  processors:\n    - mapping: |\n        root.input = this.content\n    - http:\n        url: https://api.openai.com/v1/moderations\n        verb: POST\n        headers:\n          Authorization: Bearer ${! env(\"OPENAI_API_KEY\") }\n          Content-Type: application/json\n    - mapping: |\n        let result = this.parse_json()\n        root.content_id = this.content_id\n        root.content = this.content\n        root.flagged = $result.results.index(0).flagged\n        root.categories = $result.results.index(0).categories\n        meta flagged = if $result.results.index(0).flagged { \"true\" } else { \"false\" }\n\noutput:\n  switch:\n    cases:\n      - check: meta(\"flagged\") == \"true\"\n        output:\n          kafka:\n            addresses:\n              - localhost:9092\n            topic: flagged-content\n      - output:\n          kafka:\n            addresses:\n              - localhost:9092\n            topic: approved-content"
   },
   {
+    "id": "csv-input",
+    "name": "CSV File Input",
+    "description": "Read CSV files as structured records",
+    "keywords": [
+      "csv",
+      "file",
+      "input",
+      "read",
+      "structured"
+    ],
+    "components": {
+      "inputs": [
+        "csv"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "json()"
+    ],
+    "yaml": "input:\n  csv:\n    paths:\n      - /data/*.csv\n    parse_header_row: true\n    delimiter: ','\n    batch_count: 100\n\npipeline:\n  processors:\n    - mapping: |\n        root = this\n        root.source = @path\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "csv-to-database",
+    "name": "CSV to Database Import",
+    "description": "Import CSV files into PostgreSQL database",
+    "keywords": [
+      "csv",
+      "database",
+      "postgres",
+      "import",
+      "etl",
+      "sql"
+    ],
+    "components": {
+      "inputs": [
+        "csv"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "sql_insert"
+      ]
+    },
+    "bloblangPatterns": [
+      "now()"
+    ],
+    "yaml": "input:\n  csv:\n    paths:\n      - /data/imports/*.csv\n    parse_header_row: true\n    delete_on_finish: true\n\npipeline:\n  processors:\n    - mapping: |\n        root = this\n        root.imported_at = now()\n\noutput:\n  sql_insert:\n    driver: postgres\n    dsn: postgres://user:password@localhost:5432/mydb?sslmode=disable\n    table: imported_data\n    columns: [ name, email, value, imported_at ]\n    args_mapping: |\n      root = [\n        this.name,\n        this.email,\n        this.value,\n        this.imported_at\n      ]\n    batching:\n      count: 500\n      period: 1s"
+  },
+  {
     "id": "csv-to-json",
     "name": "CSV to JSON Converter",
     "description": "Read CSV files and convert to JSON format",
@@ -3150,6 +3205,62 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
     "yaml": "input:\n  kafka:\n    addresses:\n      - localhost:9092\n    topics:\n      - users\n\npipeline:\n  processors:\n    - parallel:\n        cap: 10\n        processors:\n          - branch:\n              request_map: 'root = this.user_id'\n              processors:\n                - http:\n                    url: https://api.example.com/user/${! this }\n                    verb: GET\n              result_map: 'root.profile = this.parse_json()'\n          - branch:\n              request_map: 'root = this.user_id'\n              processors:\n                - http:\n                    url: https://api.example.com/preferences/${! this }\n                    verb: GET\n              result_map: 'root.preferences = this.parse_json()'\n    - mapping: |\n        root = this\n        root.enriched_at = now()\n\noutput:\n  kafka:\n    addresses:\n      - localhost:9092\n    topic: enriched-users"
   },
   {
+    "id": "parquet-reader",
+    "name": "Parquet File Reader",
+    "description": "Read and decode Parquet files into structured messages",
+    "keywords": [
+      "parquet",
+      "file",
+      "input",
+      "read",
+      "columnar",
+      "analytics"
+    ],
+    "components": {
+      "inputs": [
+        "parquet"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "json()"
+    ],
+    "yaml": "input:\n  parquet:\n    paths:\n      - /data/analytics/*.parquet\n    batch_count: 100\n\npipeline:\n  processors:\n    - mapping: |\n        root = this\n        root.source_file = @path\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "parquet-to-json",
+    "name": "Parquet to JSON Lines",
+    "description": "Convert Parquet files to JSON Lines format",
+    "keywords": [
+      "parquet",
+      "json",
+      "file",
+      "convert",
+      "etl",
+      "analytics"
+    ],
+    "components": {
+      "inputs": [
+        "parquet"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "file"
+      ]
+    },
+    "bloblangPatterns": [
+      "json()"
+    ],
+    "yaml": "input:\n  parquet:\n    paths:\n      - /data/input/*.parquet\n    batch_count: 100\n\npipeline:\n  processors:\n    - mapping: |\n        root = this\n\noutput:\n  file:\n    path: /data/output/data.jsonl\n    codec: lines"
+  },
+  {
     "id": "passthrough",
     "name": "Passthrough Pipeline",
     "description": "Simple passthrough that echoes input to output",
@@ -3670,6 +3781,59 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
       "meta()"
     ],
     "yaml": "input:\n  aws_s3:\n    bucket: my-bucket\n    prefix: data/\n\npipeline:\n  processors:\n    - mapping: |\n        root = this\n        root.file_path = meta(\"s3_key\")\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "sftp-consumer",
+    "name": "SFTP File Consumer",
+    "description": "Consume files from SFTP server with glob patterns",
+    "keywords": [
+      "sftp",
+      "file",
+      "input",
+      "remote",
+      "ssh"
+    ],
+    "components": {
+      "inputs": [
+        "sftp"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()"
+    ],
+    "yaml": "input:\n  sftp:\n    address: sftp.example.com:22\n    credentials:\n      username: user\n      password: ${SFTP_PASSWORD}\n    paths:\n      - /uploads/*.json\n    delete_on_finish: false\n    watcher:\n      enabled: true\n      minimum_age: 10s\n      poll_interval: 30s\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.sftp_path = @sftp_path\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "sftp-to-s3",
+    "name": "SFTP to S3 Sync",
+    "description": "Sync files from SFTP server to AWS S3",
+    "keywords": [
+      "sftp",
+      "s3",
+      "sync",
+      "file",
+      "aws",
+      "transfer"
+    ],
+    "components": {
+      "inputs": [
+        "sftp"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "aws_s3"
+      ]
+    },
+    "bloblangPatterns": [],
+    "yaml": "input:\n  sftp:\n    address: sftp.example.com:22\n    credentials:\n      username: user\n      private_key_file: /path/to/key\n    paths:\n      - /data/**/*.csv\n    delete_on_finish: true\n    watcher:\n      enabled: true\n      poll_interval: 1m\n\npipeline:\n  processors:\n    - mapping: |\n        meta s3_key = @sftp_path.trim_prefix(\"/data/\")\n\noutput:\n  aws_s3:\n    bucket: my-bucket\n    path: incoming/${! @s3_key }"
   },
   {
     "id": "shared-cache",
