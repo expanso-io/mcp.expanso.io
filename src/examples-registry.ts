@@ -3685,6 +3685,205 @@ output:
       root.timestamp_unix = this.timestamp_unix`,
     bloblangPatterns: ['timestamp_unix()', 'document_map', 'object literal'],
   },
+
+  // ============================================================================
+  // AWS ADDITIONAL COMPONENTS
+  // ============================================================================
+  {
+    id: 'aws-sns-publish',
+    name: 'AWS SNS Publisher',
+    description: 'Publish messages to AWS SNS topics for fan-out messaging',
+    keywords: ['aws', 'sns', 'publish', 'notify', 'fanout', 'pubsub', 'notification', 'topic'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['aws_sns'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.published_at = now()
+
+output:
+  aws_sns:
+    topic_arn: arn:aws:sns:us-east-1:123456789012:my-topic
+    region: us-east-1`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'aws-kinesis-output',
+    name: 'AWS Kinesis Stream Output',
+    description: 'Write messages to AWS Kinesis Data Streams',
+    keywords: ['aws', 'kinesis', 'stream', 'output', 'write', 'realtime', 'streaming'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['aws_kinesis'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.partition_key = this.user_id
+
+output:
+  aws_kinesis:
+    stream: my-kinesis-stream
+    partition_key: \${! this.partition_key }
+    region: us-east-1`,
+    bloblangPatterns: ['parse_json()'],
+  },
+
+  {
+    id: 'aws-kinesis-firehose',
+    name: 'AWS Kinesis Firehose Delivery',
+    description: 'Deliver data to AWS Kinesis Firehose for S3, Redshift, or Elasticsearch',
+    keywords: ['aws', 'kinesis', 'firehose', 'delivery', 's3', 'redshift', 'elasticsearch', 'streaming'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['aws_kinesis_firehose'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    batching:
+      count: 100
+      period: 10s
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.delivered_at = now()
+
+output:
+  aws_kinesis_firehose:
+    stream: my-firehose-stream
+    region: us-east-1`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'aws-lambda-processor',
+    name: 'AWS Lambda Processor',
+    description: 'Process messages through AWS Lambda functions',
+    keywords: ['aws', 'lambda', 'processor', 'serverless', 'function', 'transform'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['aws_lambda', 'mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-events
+
+pipeline:
+  processors:
+    - aws_lambda:
+        function: my-processing-function
+        region: us-east-1
+    - mapping: |
+        root = this.parse_json()
+        root.processed_by = "lambda"
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: processed-events`,
+    bloblangPatterns: ['parse_json()'],
+  },
+
+  {
+    id: 'aws-sqs-to-sns-fanout',
+    name: 'SQS to SNS Fan-Out',
+    description: 'Read from SQS and publish to multiple SNS topics',
+    keywords: ['aws', 'sqs', 'sns', 'fanout', 'queue', 'pubsub', 'broadcast'],
+    components: {
+      inputs: ['aws_sqs'],
+      processors: ['mapping'],
+      outputs: ['broker', 'aws_sns'],
+    },
+    yaml: `input:
+  aws_sqs:
+    url: https://sqs.us-east-1.amazonaws.com/123456789012/my-queue
+    region: us-east-1
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.distributed_at = now()
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - aws_sns:
+          topic_arn: arn:aws:sns:us-east-1:123456789012:notifications
+          region: us-east-1
+      - aws_sns:
+          topic_arn: arn:aws:sns:us-east-1:123456789012:analytics
+          region: us-east-1`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'aws-dynamodb-output',
+    name: 'AWS DynamoDB Writer',
+    description: 'Write data to AWS DynamoDB table',
+    keywords: ['aws', 'dynamodb', 'write', 'database', 'nosql', 'put', 'item'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['aws_dynamodb'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - users
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.updated_at = now()
+
+output:
+  aws_dynamodb:
+    table: users
+    region: us-east-1
+    string_columns:
+      id: \${! this.id }
+      name: \${! this.name }
+      email: \${! this.email }`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
 ];
 
 /**
