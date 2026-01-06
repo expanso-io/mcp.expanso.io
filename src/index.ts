@@ -1147,9 +1147,26 @@ Fix these issues and regenerate a valid pipeline. Key rules:
     }
   }
 
-  // If still invalid after all attempts, strip YAML from response to avoid showing broken output
+  // If still invalid after all attempts, try fallback to example or show error
   if (!lastIsValid && lastFixResult && hasUncorrectableErrors(lastFixResult.hallucinations)) {
-    // Remove YAML blocks from response
+    // Try to return a relevant example instead of showing an error
+    if (isPipelineQuery(body.message)) {
+      const fallbackExamples = searchExamples(body.message, 1);
+      if (fallbackExamples.length > 0 && fallbackExamples[0].yaml) {
+        const fallbackYaml = fallbackExamples[0].yaml;
+        const fallbackName = fallbackExamples[0].name;
+        const fallbackComponents = generateComponentsSection(fallbackYaml);
+        console.log(`[DEBUG] Validation failed, using fallback example: ${fallbackName}`);
+        return jsonResponse({
+          response: `Here's a ${fallbackName} that you can adapt for your use case:\n\n\`\`\`yaml\n${fallbackYaml}\n\`\`\`\n\nYou may need to adjust the configuration values (addresses, topics, buckets, etc.) for your environment.${fallbackComponents ? '\n\n' + fallbackComponents : ''}`,
+          sources: (searchResults.results?.slice(0, 3) || []).map((r) => ({
+            title: r.title,
+            url: r.uri,
+          })),
+        }, headers);
+      }
+    }
+    // No fallback available - show error message
     responseText = responseText.replace(/```ya?ml[\s\S]*?```/gi, '').trim();
     finalYaml = ''; // Clear the final YAML
     responseText += '\n\n*Note: I was unable to generate a fully valid pipeline configuration. Please try rephrasing your request or ask for a simpler pipeline.*';
