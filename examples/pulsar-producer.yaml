@@ -1,0 +1,39 @@
+---
+id: pulsar-producer
+name: Apache Pulsar Producer
+description: Publish messages to Apache Pulsar topics
+keywords:
+  - pulsar
+  - apache
+  - producer
+  - output
+  - messaging
+  - publish
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - pulsar
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.published_at = now()
+
+output:
+  pulsar:
+    url: pulsar://localhost:6650
+    topic: persistent://public/default/my-topic

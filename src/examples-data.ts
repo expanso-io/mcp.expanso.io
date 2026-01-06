@@ -2886,6 +2886,63 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
     "yaml": "input:\n  nats:\n    urls:\n      - nats://localhost:4222\n    subject: requests\n\npipeline:\n  processors:\n    - mapping: |\n        root.request_id = uuid_v4()\n        root.payload = this.parse_json()\n    - nats_request_reply:\n        urls:\n          - nats://localhost:4222\n        subject: backend.process\n        timeout: 5s\n    - mapping: |\n        root.request_id = this.request_id\n        root.response = this.parse_json()\n        root.completed_at = now()\n\noutput:\n  nats:\n    urls:\n      - nats://localhost:4222\n    subject: responses"
   },
   {
+    "id": "nsq-consumer",
+    "name": "NSQ Consumer",
+    "description": "Consume messages from NSQ topics",
+    "keywords": [
+      "nsq",
+      "consumer",
+      "input",
+      "messaging",
+      "queue"
+    ],
+    "components": {
+      "inputs": [
+        "nsq"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()",
+      "now()"
+    ],
+    "yaml": "input:\n  nsq:\n    nsqd_tcp_addresses:\n      - localhost:4150\n    topic: my-topic\n    channel: my-channel\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.received_at = now()\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "nsq-producer",
+    "name": "NSQ Producer",
+    "description": "Publish messages to NSQ topics",
+    "keywords": [
+      "nsq",
+      "producer",
+      "output",
+      "messaging",
+      "queue"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "nsq"
+      ]
+    },
+    "bloblangPatterns": [
+      "json()",
+      "uuid_v4()",
+      "now()"
+    ],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - mapping: |\n        root.id = uuid_v4()\n        root.payload = this.json()\n        root.timestamp = now()\n\noutput:\n  nsq:\n    nsqd_tcp_address: localhost:4150\n    topic: my-topic"
+  },
+  {
     "id": "numeric-calculations",
     "name": "Numeric Calculations",
     "description": "Perform mathematical operations on message values",
@@ -3184,6 +3241,64 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
       "or()"
     ],
     "yaml": "input:\n  gcp_pubsub:\n    project: my-project\n    subscription: my-subscription\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.event_type = meta(\"event_type\")\n        root.priority = meta(\"priority\").or(\"normal\")\n\noutput:\n  switch:\n    cases:\n      - check: this.priority == \"high\"\n        output:\n          gcp_pubsub:\n            project: my-project\n            topic: high-priority\n      - check: this.event_type == \"error\"\n        output:\n          gcp_pubsub:\n            project: my-project\n            topic: errors\n      - output:\n          gcp_pubsub:\n            project: my-project\n            topic: standard"
+  },
+  {
+    "id": "pulsar-consumer",
+    "name": "Apache Pulsar Consumer",
+    "description": "Consume messages from Apache Pulsar topics",
+    "keywords": [
+      "pulsar",
+      "apache",
+      "consumer",
+      "input",
+      "messaging",
+      "streaming"
+    ],
+    "components": {
+      "inputs": [
+        "pulsar"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()",
+      "now()"
+    ],
+    "yaml": "input:\n  pulsar:\n    url: pulsar://localhost:6650\n    topics:\n      - persistent://public/default/my-topic\n    subscription_name: my-subscription\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.received_at = now()\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "pulsar-producer",
+    "name": "Apache Pulsar Producer",
+    "description": "Publish messages to Apache Pulsar topics",
+    "keywords": [
+      "pulsar",
+      "apache",
+      "producer",
+      "output",
+      "messaging",
+      "publish"
+    ],
+    "components": {
+      "inputs": [
+        "kafka"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "pulsar"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()",
+      "now()"
+    ],
+    "yaml": "input:\n  kafka:\n    addresses:\n      - localhost:9092\n    topics:\n      - events\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.published_at = now()\n\noutput:\n  pulsar:\n    url: pulsar://localhost:6650\n    topic: persistent://public/default/my-topic"
   },
   {
     "id": "rabbitmq-fanout",

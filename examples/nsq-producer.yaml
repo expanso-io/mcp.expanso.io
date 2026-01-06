@@ -1,0 +1,36 @@
+---
+id: nsq-producer
+name: NSQ Producer
+description: Publish messages to NSQ topics
+keywords:
+  - nsq
+  - producer
+  - output
+  - messaging
+  - queue
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - nsq
+bloblangPatterns:
+  - json()
+  - uuid_v4()
+  - now()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root.id = uuid_v4()
+        root.payload = this.json()
+        root.timestamp = now()
+
+output:
+  nsq:
+    nsqd_tcp_address: localhost:4150
+    topic: my-topic

@@ -1,0 +1,37 @@
+---
+id: pulsar-consumer
+name: Apache Pulsar Consumer
+description: Consume messages from Apache Pulsar topics
+keywords:
+  - pulsar
+  - apache
+  - consumer
+  - input
+  - messaging
+  - streaming
+components:
+  inputs:
+    - pulsar
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  pulsar:
+    url: pulsar://localhost:6650
+    topics:
+      - persistent://public/default/my-topic
+    subscription_name: my-subscription
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.received_at = now()
+
+output:
+  stdout: {}

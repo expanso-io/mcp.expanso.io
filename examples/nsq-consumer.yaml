@@ -1,0 +1,36 @@
+---
+id: nsq-consumer
+name: NSQ Consumer
+description: Consume messages from NSQ topics
+keywords:
+  - nsq
+  - consumer
+  - input
+  - messaging
+  - queue
+components:
+  inputs:
+    - nsq
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  nsq:
+    nsqd_tcp_addresses:
+      - localhost:4150
+    topic: my-topic
+    channel: my-channel
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.received_at = now()
+
+output:
+  stdout: {}
