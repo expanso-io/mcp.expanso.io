@@ -1280,10 +1280,11 @@ function isPipelineQuery(query: string): boolean {
   const pipelineKeywords = [
     'pipeline', 'pipe', 'stream', 'flow',
     'kafka', 'redis', 'elasticsearch', 's3', 'sqs', 'sns', 'dynamodb', 'kinesis',
+    'cloudwatch', 'lambda', 'aws',
     'http', 'webhook', 'api', 'rest',
     'transform', 'parse', 'decode', 'encode', 'convert',
     'json', 'xml', 'avro', 'protobuf', 'csv',
-    'aggregate', 'batch', 'window',
+    'aggregate', 'batch', 'window', 'log', 'logs',
     'read from', 'write to', 'consume', 'produce',
     'input', 'output', 'processor',
     'to stdout', 'to file', 'to s3', 'to kafka'
