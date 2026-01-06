@@ -108,6 +108,38 @@ output:
   },
 
   {
+    id: 'multi-topic-kafka',
+    name: 'Multi-Topic Kafka Consumer',
+    description: 'Consume messages from multiple Kafka topics',
+    keywords: ['kafka', 'multi', 'topic', 'multiple', 'topics', 'consumer'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - topic-one
+      - topic-two
+      - topic-three
+    consumer_group: multi-topic-consumer
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.source_topic = meta("kafka_topic")
+        root.processed_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'meta()', 'now()'],
+  },
+
+  {
     id: 'kafka-producer',
     name: 'Kafka Producer Pipeline',
     description: 'Produce messages to a Kafka topic',
@@ -889,6 +921,32 @@ pipeline:
     - mapping: |
         root = this
         root.parsed_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['now()'],
+  },
+
+  {
+    id: 'field-extraction',
+    name: 'Field Extraction Pipeline',
+    description: 'Extract and transform specific fields from JSON data',
+    keywords: ['field', 'extraction', 'extract', 'fields', 'select', 'transform', 'mapping'],
+    components: {
+      inputs: ['stdin'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root.user_id = this.id
+        root.name = this.user.name
+        root.email = this.user.email
+        root.extracted_at = now()
 
 output:
   stdout: {}`,
