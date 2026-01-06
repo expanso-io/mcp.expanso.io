@@ -171,6 +171,39 @@ output:
   },
 
   {
+    id: 'kafka-batching',
+    name: 'Kafka Batching Example',
+    description: 'Consume Kafka messages with batching configuration',
+    keywords: ['kafka', 'batch', 'batching', 'batched', 'batch size', 'buffer'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    consumer_group: batch-consumer
+    batching:
+      count: 100
+      period: 10s
+
+pipeline:
+  processors:
+    - mapping: |
+        root.batch_id = uuid_v4()
+        root.messages = this.map_each(msg -> msg.parse_json())
+        root.count = this.length()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['uuid_v4()', 'map_each()', 'parse_json()', 'length()'],
+  },
+
+  {
     id: 'http-request-processor',
     name: 'HTTP Request Processor',
     description: 'Process HTTP requests from a server input',
