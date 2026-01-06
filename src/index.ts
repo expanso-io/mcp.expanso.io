@@ -919,6 +919,8 @@ ${context || 'No relevant documentation found for this query.'}`;
   let yamlBlocks = findYamlInResponse(responseText);
   const distinctId = getDistinctId(request);
 
+  console.log(`[DEBUG] Initial: yamlBlocks.length=${yamlBlocks.length}, isPipelineQuery=${isPipelineQuery(body.message)}, responseText length=${responseText.length}`);
+
   // If no YAML found and this looks like a pipeline request, retry with explicit instruction
   if (yamlBlocks.length === 0 && isPipelineQuery(body.message)) {
     // Get relevant example to include in retry prompt
