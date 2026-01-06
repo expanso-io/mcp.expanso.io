@@ -246,6 +246,132 @@ output:
   },
 
   {
+    id: 'kafka-offset',
+    name: 'Kafka Offset Management',
+    description: 'Manage Kafka consumer offsets',
+    keywords: ['kafka', 'offset', 'management', 'consumer', 'commit', 'position'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - my-topic
+    consumer_group: offset-manager
+    start_from_oldest: true
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.offset = meta("kafka_offset")
+        root.partition = meta("kafka_partition")
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'meta()'],
+  },
+
+  {
+    id: 'http-to-kafka',
+    name: 'HTTP to Kafka Pipeline',
+    description: 'Receive HTTP requests and forward to Kafka',
+    keywords: ['http', 'kafka', 'webhook', 'ingest', 'forward', 'publish'],
+    components: {
+      inputs: ['http_server'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  http_server:
+    address: 0.0.0.0:8080
+    path: /ingest
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.ingested_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: ingested-events`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'protobuf-decoder',
+    name: 'Protobuf to JSON',
+    description: 'Decode Protobuf messages to JSON',
+    keywords: ['protobuf', 'proto', 'json', 'decode', 'convert', 'binary'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['protobuf', 'mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - protobuf-events
+
+pipeline:
+  processors:
+    - protobuf:
+        operator: to_json
+        message: my.package.MyMessage
+        import_paths:
+          - /proto
+    - mapping: |
+        root = this
+        root.decoded_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['now()'],
+  },
+
+  {
+    id: 'data-masking',
+    name: 'Data Masking Pipeline',
+    description: 'Mask sensitive data fields for privacy',
+    keywords: ['data', 'masking', 'mask', 'pii', 'privacy', 'redact', 'sensitive'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-data
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.email = this.email.re_replace_all("(.).*@", "$1***@")
+        root.phone = "***-***-" + this.phone.slice(-4)
+        root.ssn = "***-**-" + this.ssn.slice(-4)
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: masked-data`,
+    bloblangPatterns: ['parse_json()', 're_replace_all()', 'slice()'],
+  },
+
+  {
     id: 'data-enrichment',
     name: 'Data Enrichment Pipeline',
     description: 'Enrich data with additional information',
