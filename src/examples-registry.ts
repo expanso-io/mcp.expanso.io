@@ -111,6 +111,417 @@ output:
     bloblangPatterns: ['parse_json()', 'now()'],
   },
 
+  // =========================================================================
+  // ELASTICSEARCH EXAMPLES (for kafka to elasticsearch, etc.)
+  // =========================================================================
+  {
+    id: 'kafka-to-elasticsearch',
+    name: 'Kafka to Elasticsearch',
+    description: 'Stream Kafka messages to Elasticsearch for indexing',
+    keywords: ['kafka', 'elasticsearch', 'elastic', 'index', 'search', 'streaming'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['elasticsearch'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    consumer_group: es-indexer
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.indexed_at = now()
+
+output:
+  elasticsearch:
+    urls:
+      - http://localhost:9200
+    index: events-\${! now().format_timestamp("2006.01.02") }`,
+    bloblangPatterns: ['parse_json()', 'now()', 'format_timestamp()'],
+  },
+
+  // =========================================================================
+  // REDIS EXAMPLES (for kafka to redis, etc.)
+  // =========================================================================
+  {
+    id: 'kafka-to-redis',
+    name: 'Kafka to Redis Pipeline',
+    description: 'Stream Kafka messages to Redis for caching',
+    keywords: ['kafka', 'redis', 'cache', 'streaming', 'key-value'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['redis_hash'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - users
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  redis_hash:
+    url: redis://localhost:6379
+    key: user:\${! this.id }
+    fields_mapping: |
+      root = this`,
+    bloblangPatterns: ['parse_json()'],
+  },
+
+  // =========================================================================
+  // KAFKA TO KAFKA EXAMPLES
+  // =========================================================================
+  {
+    id: 'kafka-to-kafka',
+    name: 'Kafka to Kafka Transform',
+    description: 'Read from one Kafka topic, transform, and write to another',
+    keywords: ['kafka', 'transform', 'topic', 'streaming', 'etl'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed = true
+        root.timestamp = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: processed-events`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  // =========================================================================
+  // HTTP CLIENT EXAMPLES
+  // =========================================================================
+  {
+    id: 'http-client-stdout',
+    name: 'HTTP Client to Stdout',
+    description: 'Fetch data from HTTP endpoint and print to stdout',
+    keywords: ['http', 'client', 'stdout', 'api', 'fetch', 'get', 'request'],
+    components: {
+      inputs: ['http_client'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  http_client:
+    url: https://api.example.com/data
+    verb: GET
+    rate_limit: 1s
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()'],
+  },
+
+  {
+    id: 'rest-api-polling',
+    name: 'REST API Polling Pipeline',
+    description: 'Poll a REST API endpoint periodically and process responses',
+    keywords: ['rest', 'api', 'polling', 'poll', 'http', 'periodic', 'interval'],
+    components: {
+      inputs: ['generate', 'http'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  generate:
+    interval: 30s
+    mapping: |
+      root = {}
+
+pipeline:
+  processors:
+    - http:
+        url: https://api.example.com/status
+        verb: GET
+    - mapping: |
+        root = this.parse_json()
+        root.polled_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'api-gateway',
+    name: 'API Gateway Pipeline',
+    description: 'HTTP server that receives requests and forwards to backend',
+    keywords: ['api', 'gateway', 'http', 'server', 'webhook', 'proxy'],
+    components: {
+      inputs: ['http_server'],
+      processors: ['mapping'],
+      outputs: ['http_client'],
+    },
+    yaml: `input:
+  http_server:
+    address: 0.0.0.0:8080
+    path: /api
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.received_at = now()
+
+output:
+  http_client:
+    url: https://backend.example.com/process
+    verb: POST`,
+    bloblangPatterns: ['now()'],
+  },
+
+  {
+    id: 'webhook-handler',
+    name: 'Webhook Event Handler',
+    description: 'Receive webhook events and process them',
+    keywords: ['webhook', 'event', 'handler', 'http', 'server', 'callback'],
+    components: {
+      inputs: ['http_server'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  http_server:
+    address: 0.0.0.0:8080
+    path: /webhook
+    allowed_verbs:
+      - POST
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.event_id = uuid_v4()
+        root.received_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'uuid_v4()', 'now()'],
+  },
+
+  // =========================================================================
+  // AWS EXAMPLES (DynamoDB, SNS, SQS, CloudWatch)
+  // =========================================================================
+  {
+    id: 'dynamodb-to-s3',
+    name: 'DynamoDB to S3',
+    description: 'Scan DynamoDB table and write to S3',
+    keywords: ['dynamodb', 's3', 'aws', 'database', 'backup', 'export'],
+    components: {
+      inputs: ['aws_dynamodb'],
+      processors: ['mapping'],
+      outputs: ['aws_s3'],
+    },
+    yaml: `input:
+  aws_dynamodb:
+    table: my-table
+    region: us-east-1
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.exported_at = now()
+
+output:
+  aws_s3:
+    bucket: my-backup-bucket
+    path: dynamodb/\${! timestamp_unix() }.json`,
+    bloblangPatterns: ['now()', 'timestamp_unix()'],
+  },
+
+  {
+    id: 'sns-to-sqs',
+    name: 'SNS to SQS Pipeline',
+    description: 'Fan out SNS messages to SQS queue',
+    keywords: ['sns', 'sqs', 'aws', 'fanout', 'queue', 'pubsub'],
+    components: {
+      inputs: ['aws_sqs'],
+      processors: ['mapping'],
+      outputs: ['aws_sqs'],
+    },
+    yaml: `input:
+  aws_sqs:
+    url: https://sqs.us-east-1.amazonaws.com/123456789/source-queue
+    region: us-east-1
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed = true
+
+output:
+  aws_sqs:
+    url: https://sqs.us-east-1.amazonaws.com/123456789/dest-queue
+    region: us-east-1`,
+    bloblangPatterns: ['parse_json()'],
+  },
+
+  {
+    id: 'cloudwatch-logs',
+    name: 'AWS CloudWatch Logs',
+    description: 'Send logs to AWS CloudWatch Logs',
+    keywords: ['cloudwatch', 'logs', 'aws', 'logging', 'monitoring'],
+    components: {
+      inputs: ['stdin'],
+      processors: ['mapping'],
+      outputs: ['aws_cloudwatch_logs'],
+    },
+    yaml: `input:
+  stdin:
+    codec: lines
+
+pipeline:
+  processors:
+    - mapping: |
+        root.message = this
+        root.timestamp = now().ts_unix_milli()
+
+output:
+  aws_cloudwatch_logs:
+    log_group: /my-app/logs
+    log_stream: \${! env("HOSTNAME") }
+    region: us-east-1`,
+    bloblangPatterns: ['now()', 'ts_unix_milli()', 'env()'],
+  },
+
+  // =========================================================================
+  // GROK PARSING EXAMPLES
+  // =========================================================================
+  {
+    id: 'grok-log-parsing',
+    name: 'Log Parsing with Grok',
+    description: 'Parse log files using grok patterns',
+    keywords: ['grok', 'log', 'parsing', 'parse', 'regex', 'pattern', 'extract'],
+    components: {
+      inputs: ['file'],
+      processors: ['grok', 'mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  file:
+    paths:
+      - /var/log/app.log
+    codec: lines
+
+pipeline:
+  processors:
+    - grok:
+        expressions:
+          - '%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} %{GREEDYDATA:message}'
+    - mapping: |
+        root = this
+        root.parsed_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['now()'],
+  },
+
+  // =========================================================================
+  // AVRO EXAMPLES
+  // =========================================================================
+  {
+    id: 'avro-decoder',
+    name: 'Avro Decoder Pipeline',
+    description: 'Decode Avro messages and convert to JSON',
+    keywords: ['avro', 'decode', 'decoder', 'schema', 'confluent', 'kafka'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['schema_registry_decode', 'mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - avro-events
+
+pipeline:
+  processors:
+    - schema_registry_decode:
+        url: http://localhost:8081
+    - mapping: |
+        root = this
+        root.decoded_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['now()'],
+  },
+
+  // =========================================================================
+  // TIME WINDOW / AGGREGATION EXAMPLES
+  // =========================================================================
+  {
+    id: 'time-window-grouping',
+    name: 'Time Window Grouping',
+    description: 'Group messages by time windows',
+    keywords: ['time', 'window', 'grouping', 'batch', 'aggregate', 'interval'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['aws_s3'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    batching:
+      period: 60s
+      count: 1000
+
+pipeline:
+  processors:
+    - mapping: |
+        root.window_id = uuid_v4()
+        root.events = this.map_each(e -> e.parse_json())
+        root.count = this.length()
+        root.window_end = now()
+
+output:
+  aws_s3:
+    bucket: time-windows
+    path: \${! now().format_timestamp("2006/01/02/15") }/\${! this.window_id }.json`,
+    bloblangPatterns: ['uuid_v4()', 'map_each()', 'parse_json()', 'length()', 'now()', 'format_timestamp()'],
+  },
+
   {
     id: 'csv-to-json',
     name: 'CSV to JSON Converter',
