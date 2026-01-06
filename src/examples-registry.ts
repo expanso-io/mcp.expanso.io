@@ -25,6 +25,324 @@ export interface PipelineExample {
  */
 export const PIPELINE_EXAMPLES: PipelineExample[] = [
   // ============================================================================
+  // BASIC/SIMPLE PIPELINES (highest priority for simple queries)
+  // ============================================================================
+  {
+    id: 'passthrough',
+    name: 'Passthrough Pipeline',
+    description: 'Simple passthrough that echoes input to output',
+    keywords: ['passthrough', 'pass', 'through', 'echo', 'simple', 'basic', 'identity', 'noop'],
+    components: {
+      inputs: ['stdin'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+
+output:
+  stdout: {}`,
+    bloblangPatterns: [],
+  },
+
+  {
+    id: 'basic-example',
+    name: 'Basic Pipeline Example',
+    description: 'A basic example pipeline that reads, processes, and outputs data',
+    keywords: ['basic', 'example', 'simple', 'starter', 'template', 'demo'],
+    components: {
+      inputs: ['generate'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  generate:
+    count: 10
+    interval: 1s
+    mapping: |
+      root.id = uuid_v4()
+      root.timestamp = now()
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.processed = true
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['uuid_v4()', 'now()'],
+  },
+
+  {
+    id: 'kafka-consumer',
+    name: 'Kafka Consumer Example',
+    description: 'Consume messages from a Kafka topic',
+    keywords: ['kafka', 'consumer', 'consume', 'read', 'subscribe', 'topic'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - my-topic
+    consumer_group: my-consumer-group
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()'],
+  },
+
+  {
+    id: 'kafka-producer',
+    name: 'Kafka Producer Pipeline',
+    description: 'Produce messages to a Kafka topic',
+    keywords: ['kafka', 'producer', 'produce', 'write', 'publish', 'topic'],
+    components: {
+      inputs: ['generate'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  generate:
+    count: 100
+    interval: 100ms
+    mapping: |
+      root.id = uuid_v4()
+      root.timestamp = now()
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: my-output-topic`,
+    bloblangPatterns: ['uuid_v4()', 'now()'],
+  },
+
+  {
+    id: 'http-request-processor',
+    name: 'HTTP Request Processor',
+    description: 'Process HTTP requests from a server input',
+    keywords: ['http', 'request', 'processor', 'server', 'process', 'handle'],
+    components: {
+      inputs: ['http_server'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  http_server:
+    address: 0.0.0.0:8080
+    path: /process
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.processed_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'http-response-transformer',
+    name: 'HTTP Response Transformer',
+    description: 'Transform HTTP responses from an API',
+    keywords: ['http', 'response', 'transformer', 'transform', 'api', 'client'],
+    components: {
+      inputs: ['http_client'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  http_client:
+    url: https://api.example.com/data
+    verb: GET
+    rate_limit: 1s
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.transformed = true
+        root.fetched_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 's3-file-processor',
+    name: 'S3 File Processor',
+    description: 'Process files from S3 bucket',
+    keywords: ['s3', 'file', 'processor', 'process', 'aws', 'bucket'],
+    components: {
+      inputs: ['aws_s3'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  aws_s3:
+    bucket: my-bucket
+    prefix: incoming/
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.file_key = meta("s3_key")
+        root.processed_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'meta()', 'now()'],
+  },
+
+  {
+    id: 'lambda-trigger',
+    name: 'Lambda Trigger Pipeline',
+    description: 'Pipeline triggered by AWS Lambda events',
+    keywords: ['lambda', 'trigger', 'aws', 'serverless', 'event', 'function'],
+    components: {
+      inputs: ['aws_sqs'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  aws_sqs:
+    url: https://sqs.us-east-1.amazonaws.com/123456789/lambda-trigger-queue
+    region: us-east-1
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.triggered_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'data-enrichment',
+    name: 'Data Enrichment Pipeline',
+    description: 'Enrich data with additional information',
+    keywords: ['data', 'enrichment', 'enrich', 'enhance', 'augment', 'lookup'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping', 'http'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - raw-data
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+    - http:
+        url: http://enrichment-service/lookup
+        verb: POST
+    - mapping: |
+        root = this.parse_json()
+        root.enriched_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: enriched-data`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'xml-to-json',
+    name: 'XML to JSON Pipeline',
+    description: 'Convert XML data to JSON format',
+    keywords: ['xml', 'json', 'convert', 'transform', 'parse', 'format'],
+    components: {
+      inputs: ['file'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  file:
+    paths:
+      - /data/*.xml
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_xml()
+        root.converted_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_xml()', 'now()'],
+  },
+
+  {
+    id: 'windowed-aggregation',
+    name: 'Windowed Aggregation',
+    description: 'Aggregate data in time-based windows',
+    keywords: ['windowed', 'window', 'aggregation', 'aggregate', 'time', 'batch'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['aws_s3'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    batching:
+      period: 60s
+      count: 1000
+
+pipeline:
+  processors:
+    - mapping: |
+        root.window_id = uuid_v4()
+        root.events = this.map_each(e -> e.parse_json())
+        root.count = this.length()
+        root.window_end = now()
+
+output:
+  aws_s3:
+    bucket: windowed-data
+    path: \${! now().format_timestamp("2006/01/02/15") }/\${! this.window_id }.json`,
+    bloblangPatterns: ['uuid_v4()', 'map_each()', 'parse_json()', 'length()', 'now()', 'format_timestamp()'],
+  },
+
+  // ============================================================================
   // LOG AGGREGATION PIPELINES (High priority for common queries)
   // ============================================================================
   {
