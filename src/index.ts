@@ -921,12 +921,30 @@ ${context || 'No relevant documentation found for this query.'}`;
 
   // If no YAML found and this looks like a pipeline request, retry with explicit instruction
   if (yamlBlocks.length === 0 && isPipelineQuery(body.message)) {
+    // Get relevant example to include in retry prompt
+    const relevantExamples = searchExamples(body.message, 1);
+    const exampleYaml = relevantExamples.length > 0 ? relevantExamples[0].yaml : '';
+    
     const retryMessages = [...messages, {
       role: 'assistant' as const,
       content: responseText
     }, {
       role: 'user' as const,
-      content: 'Please provide the complete YAML pipeline configuration in a code block. Start with "input:" and include the full pipeline.'
+      content: `Your response did not include a complete YAML code block. Here is a similar example you can adapt:
+
+\`\`\`yaml
+${exampleYaml || `input:
+  generate:
+    count: 10
+    mapping: root = {}
+
+output:
+  stdout: {}`}
+\`\`\`
+
+Now provide the complete YAML pipeline for: "${body.message}"
+
+IMPORTANT: Your response MUST include a \`\`\`yaml code block with the full pipeline.`
     }];
 
     const retryResponse = await (env.AI.run as Function)('@cf/meta/llama-3.1-8b-instruct-fast', {
