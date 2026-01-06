@@ -1,0 +1,38 @@
+---
+id: dedupe-content-hash
+name: Deduplicate by Content Hash
+description: Deduplicate messages based on content hash
+keywords:
+  - dedupe
+  - deduplication
+  - hash
+  - cache
+  - processor
+components:
+  inputs:
+    - stdin
+  processors:
+    - dedupe
+  outputs:
+    - stdout
+bloblangPatterns:
+  - content()
+  - hash()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - dedupe:
+        cache: content_cache
+        key: ${! content().hash("xxhash64") }
+        drop_on_err: true
+
+output:
+  stdout: {}
+
+cache_resources:
+  - label: content_cache
+    memory:
+      default_ttl: 300s

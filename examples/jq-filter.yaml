@@ -1,0 +1,32 @@
+---
+id: jq-filter
+name: JQ Filter Array
+description: Filter and transform arrays using jq
+keywords:
+  - jq
+  - filter
+  - array
+  - processor
+  - select
+components:
+  inputs:
+    - stdin
+  processors:
+    - jq
+  outputs:
+    - stdout
+bloblangPatterns: []
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - jq:
+        query: |
+          {
+            Cities: .locations | map(select(.state == "WA").name) | sort | join(", ")
+          }
+
+output:
+  stdout: {}

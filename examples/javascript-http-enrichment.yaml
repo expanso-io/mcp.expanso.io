@@ -1,0 +1,49 @@
+---
+id: javascript-http-enrichment
+name: JavaScript HTTP Enrichment
+description: Enrich messages by fetching data from external API using JavaScript
+keywords:
+  - javascript
+  - js
+  - http
+  - fetch
+  - enrichment
+  - processor
+components:
+  inputs:
+    - stdin
+  processors:
+    - javascript
+  outputs:
+    - stdout
+bloblangPatterns: []
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - javascript:
+        code: |
+          (() => {
+            let msg = expanso.v0_msg_as_structured();
+            
+            // Fetch additional data from API
+            let result = expanso.v0_fetch(
+              "https://api.example.com/users/" + msg.user_id,
+              {"Authorization": "Bearer " + process.env.API_TOKEN},
+              "GET",
+              ""
+            );
+            
+            if (result.status === 200) {
+              let userData = JSON.parse(result.body);
+              msg.user_name = userData.name;
+              msg.user_email = userData.email;
+            }
+            
+            expanso.v0_msg_set_structured(msg);
+          })();
+
+output:
+  stdout: {}

@@ -1,0 +1,35 @@
+---
+id: jq-transform
+name: JQ Transform
+description: Transform JSON messages using jq queries
+keywords:
+  - jq
+  - transform
+  - json
+  - processor
+  - filter
+components:
+  inputs:
+    - stdin
+  processors:
+    - jq
+  outputs:
+    - stdout
+bloblangPatterns: []
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - jq:
+        query: |
+          {
+            id: .user.id,
+            full_name: "\(.user.first_name) \(.user.last_name)",
+            email: .user.email,
+            tags: [.tags[] | select(. != "internal")]
+          }
+
+output:
+  stdout: {}

@@ -1,0 +1,42 @@
+---
+id: dedupe-kafka
+name: Deduplicate Kafka Messages
+description: Deduplicate messages using Kafka key with memory cache
+keywords:
+  - dedupe
+  - deduplication
+  - kafka
+  - cache
+  - processor
+components:
+  inputs:
+    - kafka
+  processors:
+    - dedupe
+  outputs:
+    - stdout
+bloblangPatterns:
+  - metadata()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - my-topic
+    consumer_group: my-group
+
+pipeline:
+  processors:
+    - dedupe:
+        cache: dedup_cache
+        key: ${! metadata("kafka_key") }
+        drop_on_err: true
+
+output:
+  stdout: {}
+
+cache_resources:
+  - label: dedup_cache
+    memory:
+      default_ttl: 60s

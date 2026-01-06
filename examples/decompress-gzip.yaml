@@ -1,0 +1,32 @@
+---
+id: decompress-gzip
+name: Gzip Decompress
+description: Decompress gzip-compressed message payloads
+keywords:
+  - decompress
+  - gzip
+  - processor
+  - compression
+components:
+  inputs:
+    - stdin
+  processors:
+    - decompress
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - decompress:
+        algorithm: gzip
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  stdout: {}

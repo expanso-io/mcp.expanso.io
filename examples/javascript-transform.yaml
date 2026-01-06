@@ -1,0 +1,43 @@
+---
+id: javascript-transform
+name: JavaScript Transform
+description: Transform messages using JavaScript code
+keywords:
+  - javascript
+  - js
+  - transform
+  - processor
+  - custom
+components:
+  inputs:
+    - stdin
+  processors:
+    - javascript
+  outputs:
+    - stdout
+bloblangPatterns: []
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - javascript:
+        code: |
+          (() => {
+            let msg = expanso.v0_msg_as_structured();
+            
+            // Add computed fields
+            msg.num_keys = Object.keys(msg).length;
+            msg.processed_at = new Date().toISOString();
+            
+            // Transform data
+            if (msg.items) {
+              msg.total = msg.items.reduce((sum, item) => sum + item.price, 0);
+            }
+            
+            expanso.v0_msg_set_structured(msg);
+          })();
+
+output:
+  stdout: {}

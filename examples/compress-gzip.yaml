@@ -1,0 +1,29 @@
+---
+id: compress-gzip
+name: Gzip Compress
+description: Compress message payloads using gzip
+keywords:
+  - compress
+  - gzip
+  - processor
+  - compression
+components:
+  inputs:
+    - stdin
+  processors:
+    - compress
+  outputs:
+    - stdout
+bloblangPatterns: []
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - compress:
+        algorithm: gzip
+        level: 6
+
+output:
+  stdout: {}

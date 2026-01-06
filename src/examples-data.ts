@@ -991,6 +991,30 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
     "yaml": "input:\n  cockroachdb_changefeed:\n    dsn: postgres://root@localhost:26257/mydb\n    tables:\n      - transactions\n    cursor_cache: file://./cursor.txt\n\npipeline:\n  processors:\n    - mapping: |\n        root.id = this.key.string()\n        root.payload = this.value\n        root.timestamp = this.updated.string()\n        root.operation = if this.value == null { \"delete\" } else { \"upsert\" }\n\noutput:\n  kafka:\n    addresses:\n      - localhost:9092\n    topic: transaction-changes"
   },
   {
+    "id": "compress-gzip",
+    "name": "Gzip Compress",
+    "description": "Compress message payloads using gzip",
+    "keywords": [
+      "compress",
+      "gzip",
+      "processor",
+      "compression"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "compress"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - compress:\n        algorithm: gzip\n        level: 6\n\noutput:\n  stdout: {}"
+  },
+  {
     "id": "conditional-error-detection",
     "name": "Conditional Error Detection",
     "description": "Detect errors using conditional logic (bit relations)",
@@ -1325,6 +1349,88 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
       "meta()"
     ],
     "yaml": "input:\n  kafka:\n    addresses:\n      - localhost:9092\n    topics:\n      - incoming\n\npipeline:\n  processors:\n    - try:\n        - mapping: |\n            root = this.parse_json()\n            root.processed_at = now()\n    - catch:\n        - mapping: |\n            root.original = this\n            root.error = error()\n            root.failed_at = now()\n            meta failed = \"true\"\n\noutput:\n  switch:\n    cases:\n      - check: meta(\"failed\") == \"true\"\n        output:\n          kafka:\n            addresses:\n              - localhost:9092\n            topic: dead-letter-queue\n      - output:\n          kafka:\n            addresses:\n              - localhost:9092\n            topic: processed"
+  },
+  {
+    "id": "decompress-gzip",
+    "name": "Gzip Decompress",
+    "description": "Decompress gzip-compressed message payloads",
+    "keywords": [
+      "decompress",
+      "gzip",
+      "processor",
+      "compression"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "decompress",
+        "mapping"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()"
+    ],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - decompress:\n        algorithm: gzip\n    - mapping: |\n        root = this.parse_json()\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "dedupe-content-hash",
+    "name": "Deduplicate by Content Hash",
+    "description": "Deduplicate messages based on content hash",
+    "keywords": [
+      "dedupe",
+      "deduplication",
+      "hash",
+      "cache",
+      "processor"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "dedupe"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "content()",
+      "hash()"
+    ],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - dedupe:\n        cache: content_cache\n        key: ${! content().hash(\"xxhash64\") }\n        drop_on_err: true\n\noutput:\n  stdout: {}\n\ncache_resources:\n  - label: content_cache\n    memory:\n      default_ttl: 300s"
+  },
+  {
+    "id": "dedupe-kafka",
+    "name": "Deduplicate Kafka Messages",
+    "description": "Deduplicate messages using Kafka key with memory cache",
+    "keywords": [
+      "dedupe",
+      "deduplication",
+      "kafka",
+      "cache",
+      "processor"
+    ],
+    "components": {
+      "inputs": [
+        "kafka"
+      ],
+      "processors": [
+        "dedupe"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "metadata()"
+    ],
+    "yaml": "input:\n  kafka:\n    addresses:\n      - localhost:9092\n    topics:\n      - my-topic\n    consumer_group: my-group\n\npipeline:\n  processors:\n    - dedupe:\n        cache: dedup_cache\n        key: ${! metadata(\"kafka_key\") }\n        drop_on_err: true\n\noutput:\n  stdout: {}\n\ncache_resources:\n  - label: dedup_cache\n    memory:\n      default_ttl: 60s"
   },
   {
     "id": "dynamic-routing",
@@ -1999,6 +2105,107 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
       "now()"
     ],
     "yaml": "input:\n  http_server:\n    address: 0.0.0.0:8080\n    path: /ingest\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.ingested_at = now()\n\noutput:\n  kafka:\n    addresses:\n      - localhost:9092\n    topic: ingested-events"
+  },
+  {
+    "id": "javascript-http-enrichment",
+    "name": "JavaScript HTTP Enrichment",
+    "description": "Enrich messages by fetching data from external API using JavaScript",
+    "keywords": [
+      "javascript",
+      "js",
+      "http",
+      "fetch",
+      "enrichment",
+      "processor"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "javascript"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - javascript:\n        code: |\n          (() => {\n            let msg = expanso.v0_msg_as_structured();\n            \n            // Fetch additional data from API\n            let result = expanso.v0_fetch(\n              \"https://api.example.com/users/\" + msg.user_id,\n              {\"Authorization\": \"Bearer \" + process.env.API_TOKEN},\n              \"GET\",\n              \"\"\n            );\n            \n            if (result.status === 200) {\n              let userData = JSON.parse(result.body);\n              msg.user_name = userData.name;\n              msg.user_email = userData.email;\n            }\n            \n            expanso.v0_msg_set_structured(msg);\n          })();\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "javascript-transform",
+    "name": "JavaScript Transform",
+    "description": "Transform messages using JavaScript code",
+    "keywords": [
+      "javascript",
+      "js",
+      "transform",
+      "processor",
+      "custom"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "javascript"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - javascript:\n        code: |\n          (() => {\n            let msg = expanso.v0_msg_as_structured();\n            \n            // Add computed fields\n            msg.num_keys = Object.keys(msg).length;\n            msg.processed_at = new Date().toISOString();\n            \n            // Transform data\n            if (msg.items) {\n              msg.total = msg.items.reduce((sum, item) => sum + item.price, 0);\n            }\n            \n            expanso.v0_msg_set_structured(msg);\n          })();\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "jq-filter",
+    "name": "JQ Filter Array",
+    "description": "Filter and transform arrays using jq",
+    "keywords": [
+      "jq",
+      "filter",
+      "array",
+      "processor",
+      "select"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "jq"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - jq:\n        query: |\n          {\n            Cities: .locations | map(select(.state == \"WA\").name) | sort | join(\", \")\n          }\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "jq-transform",
+    "name": "JQ Transform",
+    "description": "Transform JSON messages using jq queries",
+    "keywords": [
+      "jq",
+      "transform",
+      "json",
+      "processor",
+      "filter"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "jq"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - jq:\n        query: |\n          {\n            id: .user.id,\n            full_name: \"\\(.user.first_name) \\(.user.last_name)\",\n            email: .user.email,\n            tags: [.tags[] | select(. != \"internal\")]\n          }\n\noutput:\n  stdout: {}"
   },
   {
     "id": "json-to-csv",
