@@ -1,0 +1,40 @@
+---
+id: nats-jetstream-producer
+name: NATS JetStream Producer
+description: Publish messages to NATS JetStream streams
+keywords:
+  - nats
+  - jetstream
+  - producer
+  - stream
+  - publish
+  - output
+components:
+  inputs:
+    - kafka
+  processors:
+    - mapping
+  outputs:
+    - nats_jetstream
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.published_at = now()
+
+output:
+  nats_jetstream:
+    urls:
+      - nats://localhost:4222
+    subject: my-subject

@@ -2734,6 +2734,125 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
     "yaml": "input:\n  mysql_cdc:\n    dsn: user:pass@tcp(localhost:3306)/mydb\n    tables:\n      - products\n    snapshot_mode: initial\n\npipeline:\n  processors:\n    - mapping: |\n        root = match this.operation {\n          \"delete\" => {\n            \"_op_type\": \"delete\",\n            \"_id\": this.before.id.string()\n          }\n          _ => {\n            \"_id\": this.after.id.string(),\n            \"name\": this.after.name,\n            \"description\": this.after.description,\n            \"price\": this.after.price,\n            \"updated_at\": now()\n          }\n        }\n\noutput:\n  elasticsearch_v8:\n    urls:\n      - http://localhost:9200\n    index: products\n    id: ${! this._id }\n    action: ${! this._op_type.or(\"index\") }"
   },
   {
+    "id": "nats-jetstream-consumer",
+    "name": "NATS JetStream Consumer",
+    "description": "Consume messages from NATS JetStream with durable subscriptions",
+    "keywords": [
+      "nats",
+      "jetstream",
+      "consumer",
+      "stream",
+      "durable",
+      "queue",
+      "input"
+    ],
+    "components": {
+      "inputs": [
+        "nats_jetstream"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()",
+      "now()"
+    ],
+    "yaml": "input:\n  nats_jetstream:\n    urls:\n      - nats://localhost:4222\n    stream: my-stream\n    durable: my-consumer\n    deliver: all\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.received_at = now()\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "nats-jetstream-producer",
+    "name": "NATS JetStream Producer",
+    "description": "Publish messages to NATS JetStream streams",
+    "keywords": [
+      "nats",
+      "jetstream",
+      "producer",
+      "stream",
+      "publish",
+      "output"
+    ],
+    "components": {
+      "inputs": [
+        "kafka"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "nats_jetstream"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()",
+      "now()"
+    ],
+    "yaml": "input:\n  kafka:\n    addresses:\n      - localhost:9092\n    topics:\n      - events\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.published_at = now()\n\noutput:\n  nats_jetstream:\n    urls:\n      - nats://localhost:4222\n    subject: my-subject"
+  },
+  {
+    "id": "nats-kv-lookup",
+    "name": "NATS KV Store Lookup",
+    "description": "Use NATS Key-Value store for message enrichment",
+    "keywords": [
+      "nats",
+      "kv",
+      "key-value",
+      "lookup",
+      "cache",
+      "store",
+      "enrich"
+    ],
+    "components": {
+      "inputs": [
+        "kafka"
+      ],
+      "processors": [
+        "nats_kv",
+        "mapping"
+      ],
+      "outputs": [
+        "kafka"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()",
+      "now()"
+    ],
+    "yaml": "input:\n  kafka:\n    addresses:\n      - localhost:9092\n    topics:\n      - orders\n\npipeline:\n  processors:\n    - nats_kv:\n        urls:\n          - nats://localhost:4222\n        bucket: user-profiles\n        operation: get\n        key: ${! this.user_id }\n    - mapping: |\n        root = this.parse_json()\n        root.enriched_at = now()\n\noutput:\n  kafka:\n    addresses:\n      - localhost:9092\n    topic: enriched-orders"
+  },
+  {
+    "id": "nats-object-store",
+    "name": "NATS Object Store",
+    "description": "Read and write objects to NATS Object Store",
+    "keywords": [
+      "nats",
+      "object",
+      "store",
+      "blob",
+      "files",
+      "storage"
+    ],
+    "components": {
+      "inputs": [
+        "nats_object_store"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "meta()",
+      "now()"
+    ],
+    "yaml": "input:\n  nats_object_store:\n    urls:\n      - nats://localhost:4222\n    bucket: my-objects\n\npipeline:\n  processors:\n    - mapping: |\n        root.object_name = meta(\"nats_object_name\")\n        root.size = meta(\"nats_object_size\")\n        root.content = this\n        root.read_at = now()\n\noutput:\n  stdout: {}"
+  },
+  {
     "id": "nats-request-reply",
     "name": "NATS Request-Reply",
     "description": "Implement request-reply pattern with NATS",

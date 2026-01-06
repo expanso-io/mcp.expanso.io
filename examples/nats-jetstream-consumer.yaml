@@ -1,0 +1,39 @@
+---
+id: nats-jetstream-consumer
+name: NATS JetStream Consumer
+description: Consume messages from NATS JetStream with durable subscriptions
+keywords:
+  - nats
+  - jetstream
+  - consumer
+  - stream
+  - durable
+  - queue
+  - input
+components:
+  inputs:
+    - nats_jetstream
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  nats_jetstream:
+    urls:
+      - nats://localhost:4222
+    stream: my-stream
+    durable: my-consumer
+    deliver: all
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.received_at = now()
+
+output:
+  stdout: {}

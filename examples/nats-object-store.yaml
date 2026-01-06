@@ -1,0 +1,38 @@
+---
+id: nats-object-store
+name: NATS Object Store
+description: Read and write objects to NATS Object Store
+keywords:
+  - nats
+  - object
+  - store
+  - blob
+  - files
+  - storage
+components:
+  inputs:
+    - nats_object_store
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - meta()
+  - now()
+---
+input:
+  nats_object_store:
+    urls:
+      - nats://localhost:4222
+    bucket: my-objects
+
+pipeline:
+  processors:
+    - mapping: |
+        root.object_name = meta("nats_object_name")
+        root.size = meta("nats_object_size")
+        root.content = this
+        root.read_at = now()
+
+output:
+  stdout: {}

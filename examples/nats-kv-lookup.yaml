@@ -1,0 +1,48 @@
+---
+id: nats-kv-lookup
+name: NATS KV Store Lookup
+description: Use NATS Key-Value store for message enrichment
+keywords:
+  - nats
+  - kv
+  - key-value
+  - lookup
+  - cache
+  - store
+  - enrich
+components:
+  inputs:
+    - kafka
+  processors:
+    - nats_kv
+    - mapping
+  outputs:
+    - kafka
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - orders
+
+pipeline:
+  processors:
+    - nats_kv:
+        urls:
+          - nats://localhost:4222
+        bucket: user-profiles
+        operation: get
+        key: ${! this.user_id }
+    - mapping: |
+        root = this.parse_json()
+        root.enriched_at = now()
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: enriched-orders
