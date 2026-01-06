@@ -3884,6 +3884,252 @@ output:
       email: \${! this.email }`,
     bloblangPatterns: ['parse_json()', 'now()'],
   },
+
+  // ============================================================================
+  // AZURE COMPONENTS
+  // ============================================================================
+  {
+    id: 'azure-blob-storage-input',
+    name: 'Azure Blob Storage Input',
+    description: 'Read files from Azure Blob Storage containers',
+    keywords: ['azure', 'blob', 'storage', 'input', 'read', 'container', 'files', 'microsoft'],
+    components: {
+      inputs: ['azure_blob_storage'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  azure_blob_storage:
+    storage_account: mystorageaccount
+    storage_access_key: \${! env("AZURE_STORAGE_KEY") }
+    container: my-container
+    prefix: incoming/
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.blob_name = meta("blob_storage_key")
+        root.processed_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'meta()', 'now()', 'env()'],
+  },
+
+  {
+    id: 'azure-blob-storage-output',
+    name: 'Azure Blob Storage Output',
+    description: 'Write data to Azure Blob Storage containers',
+    keywords: ['azure', 'blob', 'storage', 'output', 'write', 'container', 'upload', 'microsoft'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['azure_blob_storage'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.archived_at = now()
+
+output:
+  azure_blob_storage:
+    storage_account: mystorageaccount
+    storage_access_key: \${! env("AZURE_STORAGE_KEY") }
+    container: archive
+    path: \${! now().format_timestamp("2006/01/02") }/\${! uuid_v4() }.json`,
+    bloblangPatterns: ['parse_json()', 'now()', 'format_timestamp()', 'uuid_v4()', 'env()'],
+  },
+
+  {
+    id: 'azure-cosmosdb-input',
+    name: 'Azure CosmosDB Input',
+    description: 'Read documents from Azure CosmosDB',
+    keywords: ['azure', 'cosmosdb', 'cosmos', 'database', 'nosql', 'input', 'read', 'microsoft'],
+    components: {
+      inputs: ['azure_cosmosdb'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  azure_cosmosdb:
+    endpoint: https://mycosmosaccount.documents.azure.com:443
+    account_key: \${! env("COSMOSDB_KEY") }
+    database: mydb
+    container: events
+    partition_keys_map: root = this.id
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.read_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['now()', 'env()'],
+  },
+
+  {
+    id: 'azure-cosmosdb-output',
+    name: 'Azure CosmosDB Output',
+    description: 'Write documents to Azure CosmosDB',
+    keywords: ['azure', 'cosmosdb', 'cosmos', 'database', 'nosql', 'output', 'write', 'microsoft'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['azure_cosmosdb'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.id = this.event_id
+        root.stored_at = now()
+
+output:
+  azure_cosmosdb:
+    endpoint: https://mycosmosaccount.documents.azure.com:443
+    account_key: \${! env("COSMOSDB_KEY") }
+    database: mydb
+    container: events
+    partition_keys_map: root = this.id
+    operation: create`,
+    bloblangPatterns: ['parse_json()', 'now()', 'env()'],
+  },
+
+  {
+    id: 'azure-queue-storage-input',
+    name: 'Azure Queue Storage Input',
+    description: 'Consume messages from Azure Queue Storage',
+    keywords: ['azure', 'queue', 'storage', 'input', 'consume', 'messages', 'microsoft'],
+    components: {
+      inputs: ['azure_queue_storage'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  azure_queue_storage:
+    storage_account: mystorageaccount
+    storage_access_key: \${! env("AZURE_STORAGE_KEY") }
+    queue_name: my-queue
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.received_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'now()', 'env()'],
+  },
+
+  {
+    id: 'azure-queue-storage-output',
+    name: 'Azure Queue Storage Output',
+    description: 'Send messages to Azure Queue Storage',
+    keywords: ['azure', 'queue', 'storage', 'output', 'send', 'messages', 'microsoft'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['azure_queue_storage'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.queued_at = now()
+
+output:
+  azure_queue_storage:
+    storage_account: mystorageaccount
+    storage_access_key: \${! env("AZURE_STORAGE_KEY") }
+    queue_name: processed-events`,
+    bloblangPatterns: ['parse_json()', 'now()', 'env()'],
+  },
+
+  {
+    id: 'azure-table-storage-input',
+    name: 'Azure Table Storage Input',
+    description: 'Read entities from Azure Table Storage',
+    keywords: ['azure', 'table', 'storage', 'input', 'read', 'entities', 'microsoft'],
+    components: {
+      inputs: ['azure_table_storage'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  azure_table_storage:
+    storage_account: mystorageaccount
+    storage_access_key: \${! env("AZURE_STORAGE_KEY") }
+    table_name: mytable
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.read_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['now()', 'env()'],
+  },
+
+  {
+    id: 'azure-table-storage-output',
+    name: 'Azure Table Storage Output',
+    description: 'Write entities to Azure Table Storage',
+    keywords: ['azure', 'table', 'storage', 'output', 'write', 'entities', 'microsoft'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['azure_table_storage'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.PartitionKey = this.category
+        root.RowKey = this.id
+        root.stored_at = now()
+
+output:
+  azure_table_storage:
+    storage_account: mystorageaccount
+    storage_access_key: \${! env("AZURE_STORAGE_KEY") }
+    table_name: events`,
+    bloblangPatterns: ['parse_json()', 'now()', 'env()'],
+  },
 ];
 
 /**
