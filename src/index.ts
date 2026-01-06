@@ -919,7 +919,7 @@ ${context || 'No relevant documentation found for this query.'}`;
   let yamlBlocks = findYamlInResponse(responseText);
   const distinctId = getDistinctId(request);
 
-  console.log(`[DEBUG] Initial: yamlBlocks.length=${yamlBlocks.length}, isPipelineQuery=${isPipelineQuery(body.message)}, responseText length=${responseText.length}`);
+
 
   // If no YAML found and this looks like a pipeline request, retry with explicit instruction
   if (yamlBlocks.length === 0 && isPipelineQuery(body.message)) {
@@ -927,7 +927,7 @@ ${context || 'No relevant documentation found for this query.'}`;
     const relevantExamples = searchExamples(body.message, 1);
     const exampleYaml = relevantExamples.length > 0 ? relevantExamples[0].yaml : '';
     const exampleName = relevantExamples.length > 0 ? relevantExamples[0].name : 'example';
-    console.log(`[DEBUG] Retry triggered for: "${body.message}", found ${relevantExamples.length} examples, exampleYaml length: ${exampleYaml.length}`);
+
     
     // More forceful retry - ask for YAML only, no explanation
     const retryMessages = [...messages, {
@@ -958,13 +958,13 @@ Respond with ONLY a \`\`\`yaml block.`
     const retryText = (retryResponse as { response: string }).response;
     const retryYamlBlocks = findYamlInResponse(retryText);
 
-    console.log(`[DEBUG] Retry result: retryYamlBlocks.length=${retryYamlBlocks.length}, exampleYaml truthy=${!!exampleYaml}`);
+
     if (retryYamlBlocks.length > 0) {
       // Use the retry response instead
       responseText = retryText;
       yamlBlocks = retryYamlBlocks;
     } else if (exampleYaml) {
-      console.log(`[DEBUG] Returning fallback example: ${exampleName}`);
+
       // FALLBACK: If retry still failed, return the example directly
       // This guarantees we always return valid YAML for pipeline requests
       // Return immediately with the example - skip validation since examples are curated
@@ -1156,7 +1156,7 @@ Fix these issues and regenerate a valid pipeline. Key rules:
         const fallbackYaml = fallbackExamples[0].yaml;
         const fallbackName = fallbackExamples[0].name;
         const fallbackComponents = generateComponentsSection(fallbackYaml);
-        console.log(`[DEBUG] Validation failed, using fallback example: ${fallbackName}`);
+
         return jsonResponse({
           response: `Here's a ${fallbackName} that you can adapt for your use case:\n\n\`\`\`yaml\n${fallbackYaml}\n\`\`\`\n\nYou may need to adjust the configuration values (addresses, topics, buckets, etc.) for your environment.${fallbackComponents ? '\n\n' + fallbackComponents : ''}`,
           sources: (searchResults.results?.slice(0, 3) || []).map((r) => ({
