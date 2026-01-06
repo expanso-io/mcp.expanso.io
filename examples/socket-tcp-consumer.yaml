@@ -1,0 +1,34 @@
+---
+id: socket-tcp-consumer
+name: TCP Socket Consumer
+description: Connect to TCP socket and consume line-delimited messages
+keywords:
+  - socket
+  - tcp
+  - input
+  - network
+  - stream
+components:
+  inputs:
+    - socket
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  socket:
+    network: tcp
+    address: 127.0.0.1:6000
+    scanner:
+      lines: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  stdout: {}

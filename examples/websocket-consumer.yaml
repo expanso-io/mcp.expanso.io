@@ -1,0 +1,35 @@
+---
+id: websocket-consumer
+name: WebSocket Consumer
+description: Connect to WebSocket server and consume messages
+keywords:
+  - websocket
+  - ws
+  - input
+  - realtime
+  - streaming
+components:
+  inputs:
+    - websocket
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  websocket:
+    url: ws://localhost:8080/stream
+    headers:
+      Authorization: Bearer ${WS_TOKEN}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.received_at = now()
+
+output:
+  stdout: {}

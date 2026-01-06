@@ -1,0 +1,38 @@
+---
+id: zmq-sub
+name: ZeroMQ SUB Socket
+description: Subscribe to ZeroMQ PUB/SUB topics
+keywords:
+  - zmq
+  - zeromq
+  - sub
+  - subscribe
+  - pubsub
+  - input
+components:
+  inputs:
+    - zmq4
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  zmq4:
+    urls:
+      - tcp://localhost:5557
+    socket_type: SUB
+    sub_filters:
+      - events.
+      - updates.
+    bind: false
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  stdout: {}

@@ -1,0 +1,32 @@
+---
+id: socket-tcp-producer
+name: TCP Socket Producer
+description: Send messages to TCP socket endpoint
+keywords:
+  - socket
+  - tcp
+  - output
+  - network
+  - stream
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - socket
+bloblangPatterns:
+  - json()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+
+output:
+  socket:
+    network: tcp
+    address: 127.0.0.1:6000

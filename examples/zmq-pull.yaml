@@ -1,0 +1,34 @@
+---
+id: zmq-pull
+name: ZeroMQ PULL Socket
+description: Consume messages from ZeroMQ PULL socket
+keywords:
+  - zmq
+  - zeromq
+  - pull
+  - input
+  - messaging
+components:
+  inputs:
+    - zmq4
+  processors:
+    - mapping
+  outputs:
+    - stdout
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  zmq4:
+    urls:
+      - tcp://localhost:5555
+    socket_type: PULL
+    bind: false
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  stdout: {}

@@ -1,0 +1,34 @@
+---
+id: zmq-push
+name: ZeroMQ PUSH Socket
+description: Send messages to ZeroMQ PUSH socket
+keywords:
+  - zmq
+  - zeromq
+  - push
+  - output
+  - messaging
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - zmq4
+bloblangPatterns:
+  - json()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+
+output:
+  zmq4:
+    urls:
+      - tcp://localhost:5556
+    socket_type: PUSH
+    bind: false

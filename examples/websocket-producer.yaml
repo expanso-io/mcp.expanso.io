@@ -1,0 +1,32 @@
+---
+id: websocket-producer
+name: WebSocket Producer
+description: Send messages to WebSocket server
+keywords:
+  - websocket
+  - ws
+  - output
+  - realtime
+  - streaming
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - websocket
+bloblangPatterns:
+  - parse_json()
+  - json()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  websocket:
+    url: ws://localhost:8080/publish

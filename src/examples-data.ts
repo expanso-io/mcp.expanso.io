@@ -3896,6 +3896,60 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
     "yaml": "input:\n  aws_sqs:\n    url: https://sqs.us-east-1.amazonaws.com/123456789/source-queue\n    region: us-east-1\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.processed = true\n\noutput:\n  aws_sqs:\n    url: https://sqs.us-east-1.amazonaws.com/123456789/dest-queue\n    region: us-east-1"
   },
   {
+    "id": "socket-tcp-consumer",
+    "name": "TCP Socket Consumer",
+    "description": "Connect to TCP socket and consume line-delimited messages",
+    "keywords": [
+      "socket",
+      "tcp",
+      "input",
+      "network",
+      "stream"
+    ],
+    "components": {
+      "inputs": [
+        "socket"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()"
+    ],
+    "yaml": "input:\n  socket:\n    network: tcp\n    address: 127.0.0.1:6000\n    scanner:\n      lines: {}\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "socket-tcp-producer",
+    "name": "TCP Socket Producer",
+    "description": "Send messages to TCP socket endpoint",
+    "keywords": [
+      "socket",
+      "tcp",
+      "output",
+      "network",
+      "stream"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "socket"
+      ]
+    },
+    "bloblangPatterns": [
+      "json()"
+    ],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - mapping: |\n        root = this\n\noutput:\n  socket:\n    network: tcp\n    address: 127.0.0.1:6000"
+  },
+  {
     "id": "sql-enrichment",
     "name": "Database Enrichment (SQL)",
     "description": "Enrich messages by fetching data from SQL database",
@@ -4415,6 +4469,62 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
     "yaml": "input:\n  http_server:\n    address: 0.0.0.0:8080\n    path: /webhook\n    allowed_verbs:\n      - POST\n\npipeline:\n  processors:\n    - mapping: |\n        root = this\n        root.received_at = now()\n        root.source = \"webhook\"\n\noutput:\n  kafka:\n    addresses:\n      - localhost:9092\n    topic: webhook-events"
   },
   {
+    "id": "websocket-consumer",
+    "name": "WebSocket Consumer",
+    "description": "Connect to WebSocket server and consume messages",
+    "keywords": [
+      "websocket",
+      "ws",
+      "input",
+      "realtime",
+      "streaming"
+    ],
+    "components": {
+      "inputs": [
+        "websocket"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()",
+      "now()"
+    ],
+    "yaml": "input:\n  websocket:\n    url: ws://localhost:8080/stream\n    headers:\n      Authorization: Bearer ${WS_TOKEN}\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.received_at = now()\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "websocket-producer",
+    "name": "WebSocket Producer",
+    "description": "Send messages to WebSocket server",
+    "keywords": [
+      "websocket",
+      "ws",
+      "output",
+      "realtime",
+      "streaming"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "websocket"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()",
+      "json()"
+    ],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n\noutput:\n  websocket:\n    url: ws://localhost:8080/publish"
+  },
+  {
     "id": "windowed-aggregation",
     "name": "Windowed Aggregation",
     "description": "Aggregate data in time-based windows",
@@ -4506,5 +4616,87 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
       "now()"
     ],
     "yaml": "input:\n  file:\n    paths:\n      - /data/*.xml\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_xml()\n        root.converted_at = now()\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "zmq-pull",
+    "name": "ZeroMQ PULL Socket",
+    "description": "Consume messages from ZeroMQ PULL socket",
+    "keywords": [
+      "zmq",
+      "zeromq",
+      "pull",
+      "input",
+      "messaging"
+    ],
+    "components": {
+      "inputs": [
+        "zmq4"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()"
+    ],
+    "yaml": "input:\n  zmq4:\n    urls:\n      - tcp://localhost:5555\n    socket_type: PULL\n    bind: false\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n\noutput:\n  stdout: {}"
+  },
+  {
+    "id": "zmq-push",
+    "name": "ZeroMQ PUSH Socket",
+    "description": "Send messages to ZeroMQ PUSH socket",
+    "keywords": [
+      "zmq",
+      "zeromq",
+      "push",
+      "output",
+      "messaging"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "zmq4"
+      ]
+    },
+    "bloblangPatterns": [
+      "json()"
+    ],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - mapping: |\n        root = this\n\noutput:\n  zmq4:\n    urls:\n      - tcp://localhost:5556\n    socket_type: PUSH\n    bind: false"
+  },
+  {
+    "id": "zmq-sub",
+    "name": "ZeroMQ SUB Socket",
+    "description": "Subscribe to ZeroMQ PUB/SUB topics",
+    "keywords": [
+      "zmq",
+      "zeromq",
+      "sub",
+      "subscribe",
+      "pubsub",
+      "input"
+    ],
+    "components": {
+      "inputs": [
+        "zmq4"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "stdout"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()"
+    ],
+    "yaml": "input:\n  zmq4:\n    urls:\n      - tcp://localhost:5557\n    socket_type: SUB\n    sub_filters:\n      - events.\n      - updates.\n    bind: false\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n\noutput:\n  stdout: {}"
   }
 ];
