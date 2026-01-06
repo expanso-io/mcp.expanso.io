@@ -217,11 +217,11 @@ COMMON FIXES:
 Return ONLY the fixed YAML in a code block, nothing else:`;
 
   try {
-    const response = await (env.AI.run as Function)('@cf/meta/llama-3.1-8b-instruct-fast', {
+    const response = await (env.AI.run as Function)('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
       messages: [
         { role: 'user', content: fixPrompt }
       ],
-      max_tokens: 512,
+      max_tokens: 768,
     });
 
     const responseText = (response as { response: string }).response;
@@ -900,11 +900,11 @@ ${context || 'No relevant documentation found for this query.'}`;
     queryLower.includes('xml') ||
     body.message.length > 60; // Long prompts are usually complex
 
-  // Call Workers AI - using 8B-fast with speculative decoding for speed + quality
-  // Use more tokens for complex queries to avoid truncating YAML
-  const response = await (env.AI.run as Function)('@cf/meta/llama-3.1-8b-instruct-fast', {
+  // Call Workers AI - using Llama 3.3 70B for better instruction following and YAML generation
+  // Upgraded from 8B to 70B to reduce empty code block failures
+  const response = await (env.AI.run as Function)('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
     messages,
-    max_tokens: isComplexQuery ? 1024 : 768,
+    max_tokens: 1536, // More tokens for 70B model
   });
 
   // Map sources to include url for frontend
@@ -924,13 +924,15 @@ ${context || 'No relevant documentation found for this query.'}`;
     // Get relevant example to include in retry prompt
     const relevantExamples = searchExamples(body.message, 1);
     const exampleYaml = relevantExamples.length > 0 ? relevantExamples[0].yaml : '';
+    const exampleName = relevantExamples.length > 0 ? relevantExamples[0].name : 'example';
     
+    // More forceful retry - ask for YAML only, no explanation
     const retryMessages = [...messages, {
       role: 'assistant' as const,
       content: responseText
     }, {
       role: 'user' as const,
-      content: `Your response did not include a complete YAML code block. Here is a similar example you can adapt:
+      content: `Output ONLY the YAML code block, no explanation. Adapt this example for "${body.message}":
 
 \`\`\`yaml
 ${exampleYaml || `input:
@@ -942,14 +944,12 @@ output:
   stdout: {}`}
 \`\`\`
 
-Now provide the complete YAML pipeline for: "${body.message}"
-
-IMPORTANT: Your response MUST include a \`\`\`yaml code block with the full pipeline.`
+Respond with ONLY a \`\`\`yaml block.`
     }];
 
-    const retryResponse = await (env.AI.run as Function)('@cf/meta/llama-3.1-8b-instruct-fast', {
+    const retryResponse = await (env.AI.run as Function)('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
       messages: retryMessages,
-      max_tokens: 1024,
+      max_tokens: 1536,
     });
 
     const retryText = (retryResponse as { response: string }).response;
@@ -959,6 +959,11 @@ IMPORTANT: Your response MUST include a \`\`\`yaml code block with the full pipe
       // Use the retry response instead
       responseText = retryText;
       yamlBlocks = retryYamlBlocks;
+    } else if (exampleYaml) {
+      // FALLBACK: If retry still failed, return the example directly
+      // This guarantees we always return valid YAML for pipeline requests
+      responseText = `Here's a ${exampleName} that you can adapt for your use case:\n\n\`\`\`yaml\n${exampleYaml}\n\`\`\`\n\nYou may need to adjust the configuration values (addresses, topics, buckets, etc.) for your environment.`;
+      yamlBlocks = [exampleYaml];
     }
   }
 
@@ -1080,9 +1085,9 @@ Fix these issues and regenerate a valid pipeline. Key rules:
     });
 
     // Regenerate with error context
-    const regenResponse = await (env.AI.run as Function)('@cf/meta/llama-3.1-8b-instruct-fast', {
+    const regenResponse = await (env.AI.run as Function)('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
       messages,
-      max_tokens: 768,
+      max_tokens: 1536,
     });
 
     const regenText = (regenResponse as { response: string }).response;
