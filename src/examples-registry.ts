@@ -4345,6 +4345,164 @@ output:
     topic: spanner-changes`,
     bloblangPatterns: [],
   },
+
+  // ============================================================================
+  // AMQP / RABBITMQ COMPONENTS
+  // ============================================================================
+  {
+    id: 'amqp-0-9-consumer',
+    name: 'AMQP 0.9 Consumer (RabbitMQ)',
+    description: 'Consume messages from RabbitMQ using AMQP 0.9.1 protocol',
+    keywords: ['amqp', 'rabbitmq', 'queue', 'consumer', 'input', 'messaging', '0.9'],
+    components: {
+      inputs: ['amqp_0_9'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  amqp_0_9:
+    urls:
+      - amqp://guest:guest@localhost:5672/
+    queue: my-queue
+    consumer_tag: my-consumer
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.received_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'amqp-0-9-producer',
+    name: 'AMQP 0.9 Producer (RabbitMQ)',
+    description: 'Publish messages to RabbitMQ using AMQP 0.9.1 protocol',
+    keywords: ['amqp', 'rabbitmq', 'queue', 'producer', 'output', 'messaging', 'publish', '0.9'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['amqp_0_9'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.published_at = now()
+
+output:
+  amqp_0_9:
+    urls:
+      - amqp://guest:guest@localhost:5672/
+    exchange: my-exchange
+    key: my-routing-key`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'amqp-1-consumer',
+    name: 'AMQP 1.0 Consumer',
+    description: 'Consume messages using AMQP 1.0 protocol',
+    keywords: ['amqp', 'queue', 'consumer', 'input', 'messaging', '1.0', 'azure', 'service', 'bus'],
+    components: {
+      inputs: ['amqp_1'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  amqp_1:
+    url: amqp://localhost:5672/
+    source_address: /my-queue
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.received_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'amqp-1-producer',
+    name: 'AMQP 1.0 Producer',
+    description: 'Publish messages using AMQP 1.0 protocol',
+    keywords: ['amqp', 'queue', 'producer', 'output', 'messaging', 'publish', '1.0', 'azure', 'service', 'bus'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['amqp_1'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.published_at = now()
+
+output:
+  amqp_1:
+    url: amqp://localhost:5672/
+    target_address: /my-queue`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'rabbitmq-fanout',
+    name: 'RabbitMQ Fanout Pattern',
+    description: 'Consume from RabbitMQ and fan-out to multiple queues',
+    keywords: ['rabbitmq', 'amqp', 'fanout', 'exchange', 'broadcast', 'pubsub'],
+    components: {
+      inputs: ['amqp_0_9'],
+      processors: ['mapping'],
+      outputs: ['broker', 'amqp_0_9'],
+    },
+    yaml: `input:
+  amqp_0_9:
+    urls:
+      - amqp://guest:guest@localhost:5672/
+    queue: source-queue
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.distributed_at = now()
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - amqp_0_9:
+          urls:
+            - amqp://guest:guest@localhost:5672/
+          exchange: fanout-exchange
+          key: queue-1
+      - amqp_0_9:
+          urls:
+            - amqp://guest:guest@localhost:5672/
+          exchange: fanout-exchange
+          key: queue-2`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
 ];
 
 /**
