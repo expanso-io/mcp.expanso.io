@@ -925,6 +925,7 @@ ${context || 'No relevant documentation found for this query.'}`;
     const relevantExamples = searchExamples(body.message, 1);
     const exampleYaml = relevantExamples.length > 0 ? relevantExamples[0].yaml : '';
     const exampleName = relevantExamples.length > 0 ? relevantExamples[0].name : 'example';
+    console.log(`[DEBUG] Retry triggered for: "${body.message}", found ${relevantExamples.length} examples, exampleYaml length: ${exampleYaml.length}`);
     
     // More forceful retry - ask for YAML only, no explanation
     const retryMessages = [...messages, {
@@ -955,11 +956,13 @@ Respond with ONLY a \`\`\`yaml block.`
     const retryText = (retryResponse as { response: string }).response;
     const retryYamlBlocks = findYamlInResponse(retryText);
 
+    console.log(`[DEBUG] Retry result: retryYamlBlocks.length=${retryYamlBlocks.length}, exampleYaml truthy=${!!exampleYaml}`);
     if (retryYamlBlocks.length > 0) {
       // Use the retry response instead
       responseText = retryText;
       yamlBlocks = retryYamlBlocks;
     } else if (exampleYaml) {
+      console.log(`[DEBUG] Returning fallback example: ${exampleName}`);
       // FALLBACK: If retry still failed, return the example directly
       // This guarantees we always return valid YAML for pipeline requests
       // Return immediately with the example - skip validation since examples are curated
