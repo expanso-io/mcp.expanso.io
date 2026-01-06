@@ -1,0 +1,49 @@
+---
+id: sql-insert-postgres
+name: SQL Insert (PostgreSQL)
+description: Insert rows into PostgreSQL database with batching
+keywords:
+  - sql
+  - postgres
+  - postgresql
+  - database
+  - insert
+  - output
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - sql_insert
+bloblangPatterns:
+  - parse_json()
+  - uuid_v4()
+  - now()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.id = uuid_v4()
+        root.created_at = now()
+
+output:
+  sql_insert:
+    driver: postgres
+    dsn: postgres://user:password@localhost:5432/mydb?sslmode=disable
+    table: events
+    columns: [ id, name, data, created_at ]
+    args_mapping: |
+      root = [
+        this.id,
+        this.name,
+        this.data.json(),
+        this.created_at
+      ]
+    batching:
+      count: 100
+      period: 1s

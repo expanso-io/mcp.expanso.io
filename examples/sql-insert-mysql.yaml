@@ -1,0 +1,41 @@
+---
+id: sql-insert-mysql
+name: SQL Insert (MySQL)
+description: Insert rows into MySQL database
+keywords:
+  - sql
+  - mysql
+  - database
+  - insert
+  - output
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - sql_insert
+bloblangPatterns:
+  - parse_json()
+  - metadata()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  sql_insert:
+    driver: mysql
+    dsn: user:password@tcp(localhost:3306)/mydb
+    table: users
+    columns: [ id, name, email ]
+    args_mapping: |
+      root = [
+        this.user.id,
+        this.user.name,
+        this.user.email
+      ]

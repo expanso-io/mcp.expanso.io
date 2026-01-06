@@ -1,0 +1,50 @@
+---
+id: sql-raw-upsert
+name: SQL Raw Upsert
+description: Execute upsert queries with ON CONFLICT handling
+keywords:
+  - sql
+  - postgres
+  - upsert
+  - raw
+  - database
+  - output
+  - conflict
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - sql_raw
+bloblangPatterns:
+  - parse_json()
+  - now()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.updated_at = now()
+
+output:
+  sql_raw:
+    driver: postgres
+    dsn: postgres://user:password@localhost:5432/mydb?sslmode=disable
+    query: |
+      INSERT INTO users (id, name, email, updated_at)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        email = EXCLUDED.email,
+        updated_at = EXCLUDED.updated_at
+    args_mapping: |
+      root = [
+        this.id,
+        this.name,
+        this.email,
+        this.updated_at
+      ]

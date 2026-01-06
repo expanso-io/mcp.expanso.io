@@ -874,6 +874,64 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
     "yaml": "input:\n  kafka:\n    addresses: [localhost:9092]\n    topics: [machine-status]\n\npipeline:\n  processors:\n    - mapping: |\n        let status_code = this.status.number().round().int64()\n        root = {\n          \"status_code\": status_code,\n          \"machine_running\": ($status_code % 2) == 1,\n          \"error_detected\": (($status_code / 2) % 2) == 1,\n          \"maintenance_required\": (($status_code / 4) % 2) == 1,\n          \"timestamp_ms\": (timestamp_unix_nano() / 1000000).floor()\n        }\n\noutput:\n  kafka:\n    addresses: [localhost:9092]\n    topic: decoded-status"
   },
   {
+    "id": "cassandra-insert",
+    "name": "Cassandra Insert",
+    "description": "Insert data into Cassandra tables with batching",
+    "keywords": [
+      "cassandra",
+      "database",
+      "insert",
+      "output",
+      "nosql",
+      "batch"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "cassandra"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()",
+      "uuid_v4()",
+      "now()"
+    ],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.id = uuid_v4()\n        root.created_at = now()\n\noutput:\n  cassandra:\n    addresses:\n      - localhost:9042\n    query: 'INSERT INTO keyspace.events (id, data, created_at) VALUES (?, ?, ?)'\n    args_mapping: |\n      root = [\n        this.id,\n        this.json(),\n        this.created_at\n      ]\n    batching:\n      count: 500\n      period: 1s"
+  },
+  {
+    "id": "cassandra-json-insert",
+    "name": "Cassandra JSON Insert",
+    "description": "Insert JSON documents directly into Cassandra using INSERT JSON",
+    "keywords": [
+      "cassandra",
+      "database",
+      "insert",
+      "json",
+      "output",
+      "nosql"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "cassandra"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()"
+    ],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n\noutput:\n  cassandra:\n    addresses:\n      - localhost:9042\n    query: 'INSERT INTO keyspace.documents JSON ?'\n    args_mapping: 'root = [ this ]'\n    batching:\n      count: 500\n      period: 1s"
+  },
+  {
     "id": "cloudwatch-logs",
     "name": "AWS CloudWatch Logs",
     "description": "Send logs to AWS CloudWatch Logs",
@@ -3705,6 +3763,122 @@ export const PIPELINE_EXAMPLES: PipelineExample[] = [
       "result_map"
     ],
     "yaml": "input:\n  kafka:\n    addresses: [localhost:9092]\n    topics: [raw-events]\n\npipeline:\n  processors:\n    - branch:\n        processors:\n          - sql_select:\n              driver: postgres\n              dsn: postgres://user:pass@localhost:5432/mydb\n              table: asset_data\n              where: asset_id = ?\n              args_mapping: root = [this.asset_id]\n              columns:\n                - latest_value\n                - asset_name\n        result_map: |\n          root.enrichment = this\n\noutput:\n  kafka:\n    addresses: [localhost:9092]\n    topic: enriched-events"
+  },
+  {
+    "id": "sql-insert-mysql",
+    "name": "SQL Insert (MySQL)",
+    "description": "Insert rows into MySQL database",
+    "keywords": [
+      "sql",
+      "mysql",
+      "database",
+      "insert",
+      "output"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "sql_insert"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()",
+      "metadata()"
+    ],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n\noutput:\n  sql_insert:\n    driver: mysql\n    dsn: user:password@tcp(localhost:3306)/mydb\n    table: users\n    columns: [ id, name, email ]\n    args_mapping: |\n      root = [\n        this.user.id,\n        this.user.name,\n        this.user.email\n      ]"
+  },
+  {
+    "id": "sql-insert-postgres",
+    "name": "SQL Insert (PostgreSQL)",
+    "description": "Insert rows into PostgreSQL database with batching",
+    "keywords": [
+      "sql",
+      "postgres",
+      "postgresql",
+      "database",
+      "insert",
+      "output"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "sql_insert"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()",
+      "uuid_v4()",
+      "now()"
+    ],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.id = uuid_v4()\n        root.created_at = now()\n\noutput:\n  sql_insert:\n    driver: postgres\n    dsn: postgres://user:password@localhost:5432/mydb?sslmode=disable\n    table: events\n    columns: [ id, name, data, created_at ]\n    args_mapping: |\n      root = [\n        this.id,\n        this.name,\n        this.data.json(),\n        this.created_at\n      ]\n    batching:\n      count: 100\n      period: 1s"
+  },
+  {
+    "id": "sql-raw-batch-delete",
+    "name": "SQL Raw Batch Delete",
+    "description": "Execute batch delete queries based on message data",
+    "keywords": [
+      "sql",
+      "delete",
+      "raw",
+      "database",
+      "output",
+      "batch"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "sql_raw"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()"
+    ],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n\noutput:\n  sql_raw:\n    driver: postgres\n    dsn: postgres://user:password@localhost:5432/mydb?sslmode=disable\n    query: \"DELETE FROM events WHERE id = $1 AND tenant_id = $2\"\n    args_mapping: |\n      root = [\n        this.event_id,\n        this.tenant_id\n      ]\n    batching:\n      count: 100\n      period: 500ms"
+  },
+  {
+    "id": "sql-raw-upsert",
+    "name": "SQL Raw Upsert",
+    "description": "Execute upsert queries with ON CONFLICT handling",
+    "keywords": [
+      "sql",
+      "postgres",
+      "upsert",
+      "raw",
+      "database",
+      "output",
+      "conflict"
+    ],
+    "components": {
+      "inputs": [
+        "stdin"
+      ],
+      "processors": [
+        "mapping"
+      ],
+      "outputs": [
+        "sql_raw"
+      ]
+    },
+    "bloblangPatterns": [
+      "parse_json()",
+      "now()"
+    ],
+    "yaml": "input:\n  stdin: {}\n\npipeline:\n  processors:\n    - mapping: |\n        root = this.parse_json()\n        root.updated_at = now()\n\noutput:\n  sql_raw:\n    driver: postgres\n    dsn: postgres://user:password@localhost:5432/mydb?sslmode=disable\n    query: |\n      INSERT INTO users (id, name, email, updated_at)\n      VALUES ($1, $2, $3, $4)\n      ON CONFLICT (id) DO UPDATE SET\n        name = EXCLUDED.name,\n        email = EXCLUDED.email,\n        updated_at = EXCLUDED.updated_at\n    args_mapping: |\n      root = [\n        this.id,\n        this.name,\n        this.email,\n        this.updated_at\n      ]"
   },
   {
     "id": "sql-to-elasticsearch",

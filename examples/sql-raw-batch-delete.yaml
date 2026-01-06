@@ -1,0 +1,42 @@
+---
+id: sql-raw-batch-delete
+name: SQL Raw Batch Delete
+description: Execute batch delete queries based on message data
+keywords:
+  - sql
+  - delete
+  - raw
+  - database
+  - output
+  - batch
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - sql_raw
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  sql_raw:
+    driver: postgres
+    dsn: postgres://user:password@localhost:5432/mydb?sslmode=disable
+    query: "DELETE FROM events WHERE id = $1 AND tenant_id = $2"
+    args_mapping: |
+      root = [
+        this.event_id,
+        this.tenant_id
+      ]
+    batching:
+      count: 100
+      period: 500ms

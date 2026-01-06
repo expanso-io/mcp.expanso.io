@@ -1,0 +1,47 @@
+---
+id: cassandra-insert
+name: Cassandra Insert
+description: Insert data into Cassandra tables with batching
+keywords:
+  - cassandra
+  - database
+  - insert
+  - output
+  - nosql
+  - batch
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - cassandra
+bloblangPatterns:
+  - parse_json()
+  - uuid_v4()
+  - now()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.id = uuid_v4()
+        root.created_at = now()
+
+output:
+  cassandra:
+    addresses:
+      - localhost:9042
+    query: 'INSERT INTO keyspace.events (id, data, created_at) VALUES (?, ?, ?)'
+    args_mapping: |
+      root = [
+        this.id,
+        this.json(),
+        this.created_at
+      ]
+    batching:
+      count: 500
+      period: 1s

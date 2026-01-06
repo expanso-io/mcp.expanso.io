@@ -1,0 +1,38 @@
+---
+id: cassandra-json-insert
+name: Cassandra JSON Insert
+description: Insert JSON documents directly into Cassandra using INSERT JSON
+keywords:
+  - cassandra
+  - database
+  - insert
+  - json
+  - output
+  - nosql
+components:
+  inputs:
+    - stdin
+  processors:
+    - mapping
+  outputs:
+    - cassandra
+bloblangPatterns:
+  - parse_json()
+---
+input:
+  stdin: {}
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+
+output:
+  cassandra:
+    addresses:
+      - localhost:9042
+    query: 'INSERT INTO keyspace.documents JSON ?'
+    args_mapping: 'root = [ this ]'
+    batching:
+      count: 500
+      period: 1s
