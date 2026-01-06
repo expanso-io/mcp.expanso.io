@@ -4130,6 +4130,221 @@ output:
     table_name: events`,
     bloblangPatterns: ['parse_json()', 'now()', 'env()'],
   },
+
+  // ============================================================================
+  // GCP COMPONENTS
+  // ============================================================================
+  {
+    id: 'gcp-cloud-storage-input',
+    name: 'GCP Cloud Storage Input',
+    description: 'Read objects from Google Cloud Storage buckets',
+    keywords: ['gcp', 'google', 'cloud', 'storage', 'gcs', 'bucket', 'input', 'read'],
+    components: {
+      inputs: ['gcp_cloud_storage'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  gcp_cloud_storage:
+    bucket: my-bucket
+    prefix: incoming/
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.object_name = meta("gcs_key")
+        root.processed_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'meta()', 'now()'],
+  },
+
+  {
+    id: 'gcp-cloud-storage-output',
+    name: 'GCP Cloud Storage Output',
+    description: 'Write objects to Google Cloud Storage buckets',
+    keywords: ['gcp', 'google', 'cloud', 'storage', 'gcs', 'bucket', 'output', 'write'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['gcp_cloud_storage'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.archived_at = now()
+
+output:
+  gcp_cloud_storage:
+    bucket: my-bucket
+    path: \${! now().format_timestamp("2006/01/02") }/\${! uuid_v4() }.json`,
+    bloblangPatterns: ['parse_json()', 'now()', 'format_timestamp()', 'uuid_v4()'],
+  },
+
+  {
+    id: 'gcp-bigquery-select',
+    name: 'GCP BigQuery Select',
+    description: 'Query data from Google BigQuery tables',
+    keywords: ['gcp', 'google', 'bigquery', 'query', 'select', 'sql', 'input', 'warehouse'],
+    components: {
+      inputs: ['gcp_bigquery_select'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  gcp_bigquery_select:
+    project: my-project
+    table: mydataset.events
+    columns:
+      - id
+      - name
+      - timestamp
+    where: timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY)
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.queried_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['now()'],
+  },
+
+  {
+    id: 'gcp-bigquery-write',
+    name: 'GCP BigQuery Write API',
+    description: 'Stream data to Google BigQuery using the Storage Write API',
+    keywords: ['gcp', 'google', 'bigquery', 'write', 'stream', 'output', 'warehouse', 'insert'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['gcp_bigquery_write_api'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+    batching:
+      count: 100
+      period: 10s
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.loaded_at = now()
+
+output:
+  gcp_bigquery_write_api:
+    project: my-project
+    dataset: mydataset
+    table: events`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'gcp-pubsub-subscribe',
+    name: 'GCP Pub/Sub Subscriber',
+    description: 'Subscribe to Google Cloud Pub/Sub topics',
+    keywords: ['gcp', 'google', 'pubsub', 'subscribe', 'input', 'messaging', 'queue'],
+    components: {
+      inputs: ['gcp_pubsub'],
+      processors: ['mapping'],
+      outputs: ['stdout'],
+    },
+    yaml: `input:
+  gcp_pubsub:
+    project: my-project
+    subscription: my-subscription
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.message_id = meta("gcp_pubsub_message_id")
+        root.received_at = now()
+
+output:
+  stdout: {}`,
+    bloblangPatterns: ['parse_json()', 'meta()', 'now()'],
+  },
+
+  {
+    id: 'gcp-pubsub-publish',
+    name: 'GCP Pub/Sub Publisher',
+    description: 'Publish messages to Google Cloud Pub/Sub topics',
+    keywords: ['gcp', 'google', 'pubsub', 'publish', 'output', 'messaging', 'topic'],
+    components: {
+      inputs: ['kafka'],
+      processors: ['mapping'],
+      outputs: ['gcp_pubsub'],
+    },
+    yaml: `input:
+  kafka:
+    addresses:
+      - localhost:9092
+    topics:
+      - events
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this.parse_json()
+        root.published_at = now()
+
+output:
+  gcp_pubsub:
+    project: my-project
+    topic: my-topic`,
+    bloblangPatterns: ['parse_json()', 'now()'],
+  },
+
+  {
+    id: 'gcp-spanner-cdc',
+    name: 'GCP Spanner Change Data Capture',
+    description: 'Stream changes from Google Cloud Spanner using CDC',
+    keywords: ['gcp', 'google', 'spanner', 'cdc', 'change', 'stream', 'database', 'realtime'],
+    components: {
+      inputs: ['gcp_spanner_cdc'],
+      processors: ['mapping'],
+      outputs: ['kafka'],
+    },
+    yaml: `input:
+  gcp_spanner_cdc:
+    project: my-project
+    instance: my-instance
+    database: my-database
+    stream: my-change-stream
+
+pipeline:
+  processors:
+    - mapping: |
+        root.table = this.table_name
+        root.operation = this.mod_type
+        root.data = this.new_values
+        root.timestamp = this.commit_timestamp
+
+output:
+  kafka:
+    addresses:
+      - localhost:9092
+    topic: spanner-changes`,
+    bloblangPatterns: [],
+  },
 ];
 
 /**
