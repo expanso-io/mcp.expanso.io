@@ -962,8 +962,15 @@ Respond with ONLY a \`\`\`yaml block.`
     } else if (exampleYaml) {
       // FALLBACK: If retry still failed, return the example directly
       // This guarantees we always return valid YAML for pipeline requests
-      responseText = `Here's a ${exampleName} that you can adapt for your use case:\n\n\`\`\`yaml\n${exampleYaml}\n\`\`\`\n\nYou may need to adjust the configuration values (addresses, topics, buckets, etc.) for your environment.`;
-      yamlBlocks = [exampleYaml];
+      // Return immediately with the example - skip validation since examples are curated
+      const fallbackComponentsSection = generateComponentsSection(exampleYaml);
+      return jsonResponse({
+        response: `Here's a ${exampleName} that you can adapt for your use case:\n\n\`\`\`yaml\n${exampleYaml}\n\`\`\`\n\nYou may need to adjust the configuration values (addresses, topics, buckets, etc.) for your environment.${fallbackComponentsSection ? '\n\n' + fallbackComponentsSection : ''}`,
+        sources: (searchResults.results?.slice(0, 3) || []).map((r) => ({
+          title: r.title,
+          url: r.uri,
+        })),
+      }, headers);
     }
   }
 
