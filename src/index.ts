@@ -1093,7 +1093,9 @@ Fix these issues and regenerate a valid pipeline. Key rules:
 - Use only documented field names (check the Valid fields lists above)
 - Don't add fields like max_in_flight, batching, retry_period to outputs
 - Use a single 'processors:' array, not multiple processor keys
-- The 'generate' input uses 'mapping:', not 'kafka:' or other nested configs`
+- The 'generate' input uses 'mapping:', not 'kafka:' or other nested configs
+
+IMPORTANT: Output ONLY the corrected YAML in a code block. Do NOT explain what you changed - just provide the working pipeline.`
     });
 
     // Regenerate with error context
@@ -1180,6 +1182,17 @@ Fix these issues and regenerate a valid pipeline. Key rules:
       /\n*\*?\*?Components used:?\*?\*?:?\n(?:[-•*]\s*(?:Input|Output|Processor|Cache|Rate Limit|Buffer|Metric):[^\n]+\n?)*/gi,
       ''
     ).trim();
+
+    // Strip internal change explanations that leak LLM fix attempts to users
+    // These are implementation details users should never see
+    responseText = responseText
+      // Remove "I made the following changes:" type paragraphs
+      .replace(/\n*(?:I(?:'ve| have)? (?:made|removed|simplified|updated|fixed|changed|replaced|modified)[^`]*?(?:should now be|is now|now (?:be|is))[^`]*?\.)/gi, '')
+      // Remove bullet lists explaining internal fixes
+      .replace(/\n*(?:[-•*]\s*(?:Removed|Simplified|Updated|Fixed|Changed|Replaced|Modified)[^`\n]*\n?)+/gi, '')
+      // Remove "This pipeline should now be valid" type sentences
+      .replace(/\n*(?:This (?:pipeline|YAML|configuration) (?:should now be|is now)[^`]*?\.)/gi, '')
+      .trim();
 
     const componentsSection = generateComponentsSection(finalYaml);
     if (componentsSection) {
