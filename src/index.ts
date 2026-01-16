@@ -12,6 +12,7 @@ import { trackChat, trackSearch, trackPageView, trackYamlFeedback, trackYamlGene
 import { validatePipelineYaml, formatValidationErrors } from './pipeline-validator';
 import { searchExamples, formatExamplesForContext, getRandomExamples, formatWelcomeExamples } from './examples-registry';
 import { generateComponentsSection, extractComponentsFromYaml } from './docs-links';
+import { cleanResponseText, removeInvalidYaml } from './response-cleaner';
 import type { components } from './types/validate-api';
 
 // Typed external validation using validate.expanso.io API contract
@@ -712,6 +713,10 @@ async function handleChatApi(
     return jsonResponse({ error: 'Method not allowed' }, headers, 405);
   }
 
+  // Parse query params for debug mode
+  const url = new URL(request.url);
+  const debugMode = url.searchParams.get('debug') === 'true';
+
   let body: {
     message: string;
     history?: Array<{ role: string; content: string }>;
@@ -1174,26 +1179,12 @@ IMPORTANT: Output ONLY the corrected YAML in a code block. Do NOT explain what y
     responseText += '\n\n*Note: I was unable to generate a fully valid pipeline configuration. Please try rephrasing your request or ask for a simpler pipeline.*';
   }
 
+  // Clean response text to remove internal implementation details
+  // Users should never see retry attempts, error categories, or fix explanations
+  responseText = cleanResponseText(responseText);
+
   // Add validated component documentation links for any YAML in the response
   if (finalYaml) {
-    // Strip any LLM-generated "Components used" section to avoid duplicates
-    // The LLM sometimes generates its own list, but we want OUR validated one
-    responseText = responseText.replace(
-      /\n*\*?\*?Components used:?\*?\*?:?\n(?:[-•*]\s*(?:Input|Output|Processor|Cache|Rate Limit|Buffer|Metric):[^\n]+\n?)*/gi,
-      ''
-    ).trim();
-
-    // Strip internal change explanations that leak LLM fix attempts to users
-    // These are implementation details users should never see
-    responseText = responseText
-      // Remove "I made the following changes:" type paragraphs
-      .replace(/\n*(?:I(?:'ve| have)? (?:made|removed|simplified|updated|fixed|changed|replaced|modified)[^`]*?(?:should now be|is now|now (?:be|is))[^`]*?\.)/gi, '')
-      // Remove bullet lists explaining internal fixes
-      .replace(/\n*(?:[-•*]\s*(?:Removed|Simplified|Updated|Fixed|Changed|Replaced|Modified)[^`\n]*\n?)+/gi, '')
-      // Remove "This pipeline should now be valid" type sentences
-      .replace(/\n*(?:This (?:pipeline|YAML|configuration) (?:should now be|is now)[^`]*?\.)/gi, '')
-      .trim();
-
     const componentsSection = generateComponentsSection(finalYaml);
     if (componentsSection) {
       responseText += '\n\n' + componentsSection;
@@ -1223,8 +1214,9 @@ IMPORTANT: Output ONLY the corrected YAML in a code block. Do NOT explain what y
     sources,
   };
 
-  // Include validation errors if YAML was generated but has unfixed issues
-  if (finalYaml && !lastIsValid && lastLocalResult && lastFixResult) {
+  // Include validation errors ONLY in debug mode (when ?debug=true is passed)
+  // This prevents leaking internal validation details to regular users
+  if (debugMode && finalYaml && !lastIsValid && lastLocalResult && lastFixResult) {
     const allErrors = [
       ...lastLocalResult.errors.map(e => ({
         path: e.path,
@@ -1236,8 +1228,6 @@ IMPORTANT: Output ONLY the corrected YAML in a code block. Do NOT explain what y
         message: h.message,
         suggestion: h.correction || undefined,
         line: h.line,
-        category: h.category,
-        hallucination: h.hallucination,
       })),
     ];
 

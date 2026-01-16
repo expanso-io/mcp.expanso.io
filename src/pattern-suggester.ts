@@ -83,7 +83,10 @@ const CONCEPT_TO_COMPONENTS: Record<string, string[]> = {
   resilience: ['retry', 'try', 'catch'],
   recover: ['retry', 'try', 'catch'],
   parallel: ['workflow', 'branch', 'parallel'],
+  concurrent: ['workflow', 'branch', 'parallel'],
+  performance: ['parallel', 'workflow', 'branch'], // performance often implies parallelization
   workflow: ['workflow', 'branch'],
+  fanout: ['broker', 'switch', 'branch'],
   split: ['unarchive', 'split'],
   merge: ['archive', 'workflow'],
   route: ['switch', 'broker'],
@@ -136,6 +139,35 @@ interface ExtractedIntent {
 }
 
 /**
+ * Normalize a concept name to match CONCEPT_TO_COMPONENTS keys.
+ * Handles plurals (webhooks -> webhook) and common variations.
+ */
+function normalizeConcept(concept: string): string | null {
+  // Direct match first
+  if (CONCEPT_TO_COMPONENTS[concept]) {
+    return concept;
+  }
+
+  // Try removing trailing 's' for plurals (webhooks -> webhook, events -> event)
+  if (concept.endsWith('s') && concept.length > 2) {
+    const singular = concept.slice(0, -1);
+    if (CONCEPT_TO_COMPONENTS[singular]) {
+      return singular;
+    }
+  }
+
+  // Try removing 'es' suffix (messages -> message)
+  if (concept.endsWith('es') && concept.length > 3) {
+    const singular = concept.slice(0, -2);
+    if (CONCEPT_TO_COMPONENTS[singular]) {
+      return singular;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Extract intent from natural language use case description
  */
 function extractIntent(useCase: string): ExtractedIntent {
@@ -160,8 +192,9 @@ function extractIntent(useCase: string): ExtractedIntent {
   for (const pattern of sourcePatterns) {
     let match;
     while ((match = pattern.exec(normalized)) !== null) {
-      const concept = match[1];
-      if (CONCEPT_TO_COMPONENTS[concept]) {
+      const rawConcept = match[1];
+      const concept = normalizeConcept(rawConcept);
+      if (concept) {
         source_concepts.push(concept);
       }
     }
@@ -181,8 +214,9 @@ function extractIntent(useCase: string): ExtractedIntent {
   for (const pattern of destPatterns) {
     let match;
     while ((match = pattern.exec(normalized)) !== null) {
-      const concept = match[1];
-      if (CONCEPT_TO_COMPONENTS[concept]) {
+      const rawConcept = match[1];
+      const concept = normalizeConcept(rawConcept);
+      if (concept) {
         destination_concepts.push(concept);
       }
     }
@@ -190,18 +224,19 @@ function extractIntent(useCase: string): ExtractedIntent {
 
   // Extract standalone concepts that might indicate source/destination
   for (const word of words) {
-    if (CONCEPT_TO_COMPONENTS[word]) {
+    const concept = normalizeConcept(word);
+    if (concept) {
       // If not already categorized, add to appropriate list based on position
-      if (!source_concepts.includes(word) && !destination_concepts.includes(word)) {
+      if (!source_concepts.includes(concept) && !destination_concepts.includes(concept)) {
         // Check context to determine if source or destination
         const idx = normalized.indexOf(word);
         const before = normalized.slice(Math.max(0, idx - 20), idx);
         const after = normalized.slice(idx, idx + 20);
 
         if (before.includes('from') || before.includes('consume') || before.includes('read')) {
-          source_concepts.push(word);
+          source_concepts.push(concept);
         } else if (after.includes('to') || before.includes('write') || before.includes('send')) {
-          destination_concepts.push(word);
+          destination_concepts.push(concept);
         }
       }
     }
@@ -210,7 +245,8 @@ function extractIntent(useCase: string): ExtractedIntent {
   // Extract transformation concepts
   const transformWords = ['parse', 'filter', 'enrich', 'validate', 'transform', 'convert',
     'aggregate', 'batch', 'dedupe', 'retry', 'split', 'merge', 'route', 'capture', 'changes', 'change',
-    'backoff', 'error', 'fallback', 'recover', 'resilience', 'cdc', 'replication'];
+    'backoff', 'error', 'fallback', 'recover', 'resilience', 'cdc', 'replication',
+    'parallel', 'concurrent', 'workflow', 'fan-out', 'fanout', 'branch', 'performance'];
   for (const word of words) {
     if (transformWords.includes(word)) {
       transformation_concepts.push(word);
