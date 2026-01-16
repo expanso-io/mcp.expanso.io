@@ -13,6 +13,7 @@ import { validatePipelineYaml, formatValidationErrors } from './pipeline-validat
 import { searchExamples, formatExamplesForContext, getRandomExamples, formatWelcomeExamples } from './examples-registry';
 import { generateComponentsSection, extractComponentsFromYaml } from './docs-links';
 import { cleanResponseText, removeInvalidYaml } from './response-cleaner';
+import { generateValidPipeline, type GeneratorEnv, type GenerationResult } from './schema-generator';
 import type { components } from './types/validate-api';
 
 // Typed external validation using validate.expanso.io API contract
@@ -926,14 +927,79 @@ ${context || 'No relevant documentation found for this query.'}`;
 
 
 
-  // If no YAML found and this looks like a pipeline request, retry with explicit instruction
+  // If no YAML found and this looks like a pipeline request, use schema-driven generation
   if (yamlBlocks.length === 0 && isPipelineQuery(body.message)) {
-    // Get relevant example to include in retry prompt
+    // SCHEMA-DRIVEN GENERATION: Try generating from schema first
+    // This uses the actual validate.expanso.io schema instead of hardcoded mappings
+    const generatorEnv: GeneratorEnv = {
+      AI: env.AI as GeneratorEnv['AI'],
+      CONTENT_CACHE: env.CONTENT_CACHE,
+    };
+
+    // Create fallback function that returns an example
+    const exampleFallback = (query: string): GenerationResult | null => {
+      const relevantExamples = searchExamples(query, 1);
+      if (relevantExamples.length > 0 && relevantExamples[0].yaml) {
+        return {
+          yaml: relevantExamples[0].yaml,
+          explanation: `Here's a ${relevantExamples[0].name} that you can adapt for your use case.`,
+          components_used: [],
+          generation_method: 'fallback',
+        };
+      }
+      return null;
+    };
+
+    const schemaResult = await generateValidPipeline(body.message, generatorEnv, {
+      maxRetries: 3,
+      fallback: exampleFallback,
+    });
+
+    if (schemaResult && schemaResult.yaml) {
+      // Schema-driven generation succeeded!
+      const componentsSection = generateComponentsSection(schemaResult.yaml);
+      const explanation = schemaResult.explanation || 'Here\'s a pipeline for your request.';
+
+      // Build response with YAML and component links
+      let schemaResponseText = `${explanation}\n\n\`\`\`yaml\n${schemaResult.yaml}\n\`\`\``;
+      if (componentsSection) {
+        schemaResponseText += '\n\n' + componentsSection;
+      }
+
+      // If generation wasn't fully valid, add a note
+      if (!schemaResult.valid) {
+        schemaResponseText += '\n\n*Note: This pipeline may need minor adjustments. Please verify the configuration values for your environment.*';
+      }
+
+      // Track the generation
+      trackChat(
+        env.POSTHOG_API_KEY,
+        distinctId,
+        body.message,
+        schemaResponseText.length,
+        sources.length
+      ).catch(() => {});
+
+      return jsonResponse({
+        response: schemaResponseText,
+        sources,
+        ...(debugMode && {
+          debug: {
+            generation_method: schemaResult.generation_method,
+            valid: schemaResult.valid,
+            validation_attempts: schemaResult.validation_attempts,
+            components_used: schemaResult.components_used,
+          },
+        }),
+      }, headers);
+    }
+
+    // Schema generation failed completely, fall back to example-based retry
     const relevantExamples = searchExamples(body.message, 1);
     const exampleYaml = relevantExamples.length > 0 ? relevantExamples[0].yaml : '';
     const exampleName = relevantExamples.length > 0 ? relevantExamples[0].name : 'example';
 
-    
+
     // More forceful retry - ask for YAML only, no explanation
     const retryMessages = [...messages, {
       role: 'assistant' as const,

@@ -34,7 +34,7 @@ import {
   formatBloblangReference,
   type BloblangCategory,
 } from './bloblang-reference';
-import { suggestWithFallback } from './pattern-suggester';
+import { suggestWithFallback } from './example-fallback';
 import { explainError } from './error-explainer';
 import { generateTestData } from './test-data-generator';
 
