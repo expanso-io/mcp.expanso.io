@@ -233,9 +233,11 @@ function extractIntent(useCase: string): ExtractedIntent {
         const before = normalized.slice(Math.max(0, idx - 20), idx);
         const after = normalized.slice(idx, idx + 20);
 
-        if (before.includes('from') || before.includes('consume') || before.includes('read')) {
+        if (before.includes('from') || before.includes('consume') || before.includes('read') || after.includes('to')) {
+          // "from X", "consume X", "read X", or "X to Y" → X is source
           source_concepts.push(concept);
-        } else if (after.includes('to') || before.includes('write') || before.includes('send')) {
+        } else if (before.includes('to') || before.includes('write') || before.includes('send') || before.includes('into')) {
+          // "to X", "write X", "send X", "into X" → X is destination
           destination_concepts.push(concept);
         }
       }

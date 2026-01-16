@@ -30,6 +30,16 @@ describe('Pattern Suggester', () => {
       expect(results[0].yaml).toContain('http_server');
     });
 
+    it('should find sql-to-elasticsearch pattern for "sql to elasticsearch pipeline"', () => {
+      const results = suggestPipelinePatterns({
+        use_case: 'sql to elasticsearch pipeline',
+      });
+      expect(results.length).toBeGreaterThan(0);
+      // Should have SQL as source and Elasticsearch as destination
+      expect(results[0].yaml).toMatch(/sql_select|sql_raw/);
+      expect(results[0].yaml.toLowerCase()).toContain('elasticsearch');
+    });
+
     it('should find filtering pattern for "filter events by type"', () => {
       const results = suggestPipelinePatterns({
         use_case: 'filter events by type',
