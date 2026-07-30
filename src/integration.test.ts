@@ -162,22 +162,31 @@ describe('Integration: Schema Generator (Mocked)', () => {
 
   beforeAll(() => {
     global.fetch = vi.fn().mockImplementation(async (url: string) => {
-      if (url.includes('/components')) {
-        return {
-          ok: true,
-          json: async () => ({
-            inputs: ['generate', 'kafka', 'http_server', 'sql_select'],
-            outputs: ['stdout', 'kafka', 'elasticsearch', 'aws_s3'],
-            processors: ['mapping', 'log', 'switch'],
-            caches: ['memory'],
-            rate_limits: ['local'],
-          }),
-        };
-      }
       if (url.includes('/schema')) {
         return {
           ok: true,
           json: async () => ({
+            components: {
+              inputs: {
+                generate: { fields: {} },
+                kafka: { fields: {} },
+                http_server: { fields: {} },
+                sql_select: { fields: {} },
+              },
+              outputs: {
+                stdout: { fields: {} },
+                kafka: { fields: {} },
+                elasticsearch: { fields: {} },
+                aws_s3: { fields: {} },
+              },
+              processors: {
+                mapping: { fields: {} },
+                log: { fields: {} },
+                switch: { fields: {} },
+              },
+              caches: { memory: { fields: {} } },
+              rate_limits: { local: { fields: {} } },
+            },
             definitions: {
               input: { type: 'object' },
               output: { type: 'object' },

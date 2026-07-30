@@ -34,7 +34,7 @@ export interface GenerationResult {
  * Build the system prompt for pipeline generation
  */
 function buildSystemPrompt(schemaContext: string): string {
-  return `You are an expert at creating Bacalhau/Benthos data pipeline configurations.
+  return `You are an expert at creating Expanso Edge data pipeline configurations.
 
 You have access to the following schema of available components:
 

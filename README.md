@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server for semantic search and retrieval over Exp
 
 - **Semantic Search**: Query documentation using natural language
 - **MCP Protocol**: Compatible with Claude, ChatGPT, and other AI assistants
-- **Multi-Domain**: Searches across expanso.io, docs.expanso.io, docs.bacalhau.org, examples.expanso.io
+- **Multi-Domain**: Searches across expanso.io, docs.expanso.io, and examples.expanso.io
 - **HTTP API**: Direct API access for custom integrations
 - **Edge Deployment**: Low latency via Cloudflare's global network
 
@@ -210,7 +210,6 @@ npm run tail
 |--------|---------|
 | expanso.io | Product overview, industries, use cases |
 | docs.expanso.io | Platform documentation, CLI, components |
-| docs.bacalhau.org | Bacalhau distributed compute docs |
 | examples.expanso.io | Production-ready pipeline examples |
 
 ## License
