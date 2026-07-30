@@ -67,7 +67,6 @@ scripts/
 - `expanso.io` - Product overview, industries, use cases
 - `docs.expanso.io` - Platform documentation, CLI, components
 - `examples.expanso.io` - Production-ready pipeline examples
-- `docs.bacalhau.org` - Bacalhau distributed compute docs
 
 ## Environment Variables
 

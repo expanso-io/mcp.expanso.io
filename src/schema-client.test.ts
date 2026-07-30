@@ -98,6 +98,36 @@ const mockSchema: PipelineSchema = {
   },
 };
 
+const mockValidatorSchema = {
+  components: {
+    inputs: {
+      kafka: {
+        fields: {
+          addresses: { type: 'array', optional: false },
+        },
+      },
+      generate: { fields: {} },
+    },
+    outputs: {
+      kafka: { fields: {} },
+      stdout: { fields: {} },
+    },
+    processors: {
+      mapping: {
+        fields: {
+          map: { type: 'string', optional: true },
+        },
+      },
+    },
+    caches: {
+      memory: { fields: {} },
+    },
+    rate_limits: {
+      local: { fields: {} },
+    },
+  },
+};
+
 // Mock KV namespace
 function createMockCache(): {
   cache: { get: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
@@ -129,13 +159,26 @@ describe('Schema Client', () => {
 
       const result = await fetchComponents();
 
-      expect(mockFetch).toHaveBeenCalledWith('https://validate.expanso.io/components');
+      expect(mockFetch).toHaveBeenCalledWith('https://validate.expanso.io/schema?full=true');
       expect(result).toEqual(mockComponentsList);
+    });
+
+    it('should derive component lists from the validator schema', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockValidatorSchema,
+      });
+
+      const result = await fetchComponents();
+
+      expect(result.inputs).toEqual(['generate', 'kafka']);
+      expect(result.outputs).toEqual(['kafka', 'stdout']);
+      expect(result.processors).toEqual(['mapping']);
     });
 
     it('should return cached components if available', async () => {
       const { cache, storage } = createMockCache();
-      storage.set('expanso:components:v1', JSON.stringify(mockComponentsList));
+      storage.set('expanso:components:v2', JSON.stringify(mockComponentsList));
 
       const result = await fetchComponents(cache);
 
@@ -153,7 +196,7 @@ describe('Schema Client', () => {
       await fetchComponents(cache);
 
       expect(cache.put).toHaveBeenCalledWith(
-        'expanso:components:v1',
+        'expanso:components:v2',
         JSON.stringify(mockComponentsList),
         { expirationTtl: 3600 }
       );
@@ -195,13 +238,31 @@ describe('Schema Client', () => {
 
       const result = await fetchSchema();
 
-      expect(mockFetch).toHaveBeenCalledWith('https://validate.expanso.io/schema');
+      expect(mockFetch).toHaveBeenCalledWith('https://validate.expanso.io/schema?full=true');
       expect(result).toEqual(mockSchema);
+    });
+
+    it('should normalize the validator schema into component definitions', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockValidatorSchema,
+      });
+
+      const result = await fetchSchema();
+
+      expect(result.definitions.input_kafka.properties?.addresses).toMatchObject({
+        type: 'array',
+        is_optional: false,
+      });
+      expect(result.definitions.processor_mapping.properties?.map).toMatchObject({
+        type: 'string',
+        is_optional: true,
+      });
     });
 
     it('should return cached schema if available', async () => {
       const { cache, storage } = createMockCache();
-      storage.set('expanso:schema:v1', JSON.stringify(mockSchema));
+      storage.set('expanso:schema:v2', JSON.stringify(mockSchema));
 
       const result = await fetchSchema(cache);
 
@@ -219,7 +280,7 @@ describe('Schema Client', () => {
       await fetchSchema(cache);
 
       expect(cache.put).toHaveBeenCalledWith(
-        'expanso:schema:v1',
+        'expanso:schema:v2',
         JSON.stringify(mockSchema),
         { expirationTtl: 3600 }
       );
@@ -361,8 +422,8 @@ describe('Schema Client', () => {
 
     it('should use cache when available', async () => {
       const { cache, storage } = createMockCache();
-      storage.set('expanso:components:v1', JSON.stringify(mockComponentsList));
-      storage.set('expanso:schema:v1', JSON.stringify(mockSchema));
+      storage.set('expanso:components:v2', JSON.stringify(mockComponentsList));
+      storage.set('expanso:schema:v2', JSON.stringify(mockSchema));
 
       const result = await getSchemaContext('sql to elasticsearch', cache);
 

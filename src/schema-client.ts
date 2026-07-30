@@ -6,9 +6,10 @@
  */
 
 // Cache keys and TTL
-const SCHEMA_CACHE_KEY = 'expanso:schema:v1';
-const COMPONENTS_CACHE_KEY = 'expanso:components:v1';
+const SCHEMA_CACHE_KEY = 'expanso:schema:v2';
+const COMPONENTS_CACHE_KEY = 'expanso:components:v2';
 const CACHE_TTL_SECONDS = 3600; // 1 hour
+const FULL_SCHEMA_URL = 'https://validate.expanso.io/schema?full=true';
 
 /**
  * Component lists from /components endpoint
@@ -57,6 +58,25 @@ export interface PipelineSchema {
   type?: string;
 }
 
+interface ValidatorFieldSchema {
+  type?: string;
+  description?: string;
+  optional?: boolean;
+  advanced?: boolean;
+  deprecated?: boolean;
+  secret?: boolean;
+  default?: unknown;
+}
+
+interface ValidatorComponentDefinition {
+  fields?: Record<string, ValidatorFieldSchema>;
+  description?: string;
+}
+
+interface ValidatorSchema {
+  components?: Record<string, Record<string, ValidatorComponentDefinition>>;
+}
+
 /**
  * KV namespace interface for caching
  */
@@ -65,8 +85,98 @@ interface KVNamespace {
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
 }
 
+function isComponentsList(value: unknown): value is ComponentsList {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<ComponentsList>;
+  return ['inputs', 'outputs', 'processors', 'caches', 'rate_limits'].every(key =>
+    Array.isArray(candidate[key as keyof ComponentsList])
+  );
+}
+
+function componentsFromSchema(schema: ValidatorSchema): ComponentsList {
+  const components = schema.components;
+  if (!components) {
+    throw new Error('Validator schema response is missing components');
+  }
+
+  const names = (type: string): string[] =>
+    Object.keys(components[type] || {}).sort();
+
+  return {
+    inputs: names('inputs'),
+    outputs: names('outputs'),
+    processors: names('processors'),
+    caches: names('caches'),
+    rate_limits: names('rate_limits'),
+  };
+}
+
+function normalizeField(field: ValidatorFieldSchema): FieldSchema {
+  return {
+    type: field.type,
+    description: field.description,
+    is_optional: field.optional,
+    is_advanced: field.advanced,
+    is_deprecated: field.deprecated,
+    is_secret: field.secret,
+    default: field.default,
+  };
+}
+
+function normalizeSchema(raw: PipelineSchema | ValidatorSchema): PipelineSchema {
+  if ('definitions' in raw && raw.definitions) {
+    return raw as PipelineSchema;
+  }
+
+  const components = (raw as ValidatorSchema).components;
+  if (!components) {
+    throw new Error('Validator schema response is missing components');
+  }
+
+  const definitions: Record<string, ComponentDefinition> = {
+    input: { type: 'object', properties: {} },
+    output: { type: 'object', properties: {} },
+    processor: { type: 'object', properties: {} },
+    pipeline: { type: 'object', properties: {} },
+    buffer: { type: 'object', properties: {} },
+    cache: { type: 'object', properties: {} },
+  };
+  const prefixes: Record<string, string> = {
+    inputs: 'input',
+    outputs: 'output',
+    processors: 'processor',
+    buffers: 'buffer',
+    caches: 'cache',
+    rate_limits: 'rate_limit',
+    scanners: 'scanner',
+    metrics: 'metrics',
+    tracers: 'tracer',
+  };
+
+  for (const [type, typeComponents] of Object.entries(components)) {
+    const prefix = prefixes[type] || type.replace(/s$/, '');
+    for (const [name, component] of Object.entries(typeComponents)) {
+      const properties = Object.fromEntries(
+        Object.entries(component.fields || {}).map(([fieldName, field]) => [
+          fieldName,
+          normalizeField(field),
+        ])
+      );
+      const definition: ComponentDefinition = {
+        type: 'object',
+        description: component.description,
+        properties,
+      };
+      definitions[`${prefix}_${name}`] = definition;
+      definitions[name] ??= definition;
+    }
+  }
+
+  return { definitions };
+}
+
 /**
- * Fetch the component list from validate.expanso.io/components
+ * Fetch the component list from the validator's full schema
  * Returns cached version if available, fetches fresh if not.
  */
 export async function fetchComponents(cache?: KVNamespace): Promise<ComponentsList> {
@@ -82,13 +192,17 @@ export async function fetchComponents(cache?: KVNamespace): Promise<ComponentsLi
     }
   }
 
-  // Fetch fresh
-  const response = await fetch('https://validate.expanso.io/components');
+  // The validator's full schema is the canonical component catalog. The
+  // /components endpoint is a human-facing fuzzy-matching example.
+  const response = await fetch(FULL_SCHEMA_URL);
   if (!response.ok) {
     throw new Error(`Failed to fetch components: ${response.status} ${response.statusText}`);
   }
 
-  const components: ComponentsList = await response.json();
+  const raw: unknown = await response.json();
+  const components = isComponentsList(raw)
+    ? raw
+    : componentsFromSchema(raw as ValidatorSchema);
 
   // Cache the result
   if (cache) {
@@ -125,12 +239,12 @@ export async function fetchSchema(cache?: KVNamespace): Promise<PipelineSchema> 
   }
 
   // Fetch fresh
-  const response = await fetch('https://validate.expanso.io/schema');
+  const response = await fetch(FULL_SCHEMA_URL);
   if (!response.ok) {
     throw new Error(`Failed to fetch schema: ${response.status} ${response.statusText}`);
   }
 
-  const schema: PipelineSchema = await response.json();
+  const schema = normalizeSchema(await response.json());
 
   // Cache the result
   if (cache) {
