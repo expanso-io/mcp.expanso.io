@@ -96,6 +96,12 @@ npm run deploy
 npm run dev
 ```
 
+Pushes to `main` deploy automatically through `.github/workflows/deploy.yml`
+(`wrangler deploy --env=""`), which then checks that every resource the live
+server lists resolves. It needs the repository secret
+`CLOUDFLARE_API_TOKEN_WORKERS_DEPLOY` (Account > Workers Scripts > Edit) and
+fails if it is missing.
+
 ## API Reference
 
 ### HTTP API
