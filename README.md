@@ -74,6 +74,18 @@ export CLOUDFLARE_API_TOKEN=your-api-token
 npm run index
 ```
 
+Each run upserts the current chunks, then deletes every vector it did not
+produce, so sections removed from the docs stop appearing in search. It skips
+the delete step if any source failed to fetch for a reason other than 404/410.
+
+### Automatic Re-indexing
+
+`.github/workflows/reindex.yml` re-indexes when docs.expanso.io deploys (a
+`docs-deployed` repository dispatch), and hourly when the live
+`https://docs.expanso.io/version.json` commit has not been indexed yet that day.
+It needs the repository secret `CLOUDFLARE_API_TOKEN_TOKENIZE` (Workers AI Read,
+Vectorize Edit). Without it the workflow warns and skips.
+
 ### Deploy
 
 ```bash

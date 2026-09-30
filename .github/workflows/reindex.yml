@@ -1,0 +1,107 @@
+name: Re-index docs
+
+# Keeps the Vectorize index behind search_docs in step with the live docs.
+# docs.expanso.io dispatches docs-deployed after each verified deploy; the
+# schedule catches deploys whose dispatch was skipped. A run only indexes
+# when the live docs commit (or the day) changed since the last successful
+# index, so most scheduled runs stop after one HTTP request.
+
+on:
+  repository_dispatch:
+    types:
+      - docs-deployed
+  schedule:
+    - cron: '41 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Re-index even if this docs commit was already indexed today
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reindex
+  cancel-in-progress: false
+
+jobs:
+  reindex:
+    name: Re-index Vectorize from live docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Resolve live docs commit
+        id: docs
+        run: |
+          set -euo pipefail
+          commit=$(curl -fsS --retry 3 \
+            "https://docs.expanso.io/version.json?t=$(date +%s)" |
+            jq -er '.commit')
+          if [[ ! "${commit}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::docs.expanso.io/version.json returned no commit SHA"
+            exit 1
+          fi
+          # expanso.io and examples.expanso.io change without a docs deploy,
+          # so the day is part of the key: at least one index per day.
+          echo "key=docs-index-${commit}-$(date -u +%Y-%m-%d)" >> "${GITHUB_OUTPUT}"
+          echo "commit=${commit}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check whether this commit is already indexed
+        id: indexed
+        if: ${{ !inputs.force }}
+        uses: actions/cache/restore@v6
+        with:
+          path: .reindex-stamp
+          key: ${{ steps.docs.outputs.key }}
+          lookup-only: true
+
+      # Without the token this run cannot index. It warns and exits cleanly so
+      # a missing secret does not leave the repository permanently red.
+      - name: Check indexing credentials
+        id: credentials
+        if: steps.indexed.outputs.cache-hit != 'true'
+        env:
+          CLOUDFLARE_API_TOKEN_TOKENIZE: ${{ secrets.CLOUDFLARE_API_TOKEN_TOKENIZE }}
+        run: |
+          if [[ -z "${CLOUDFLARE_API_TOKEN_TOKENIZE}" ]]; then
+            echo "::warning title=Docs re-index skipped::Repository secret CLOUDFLARE_API_TOKEN_TOKENIZE is not set (needs Workers AI Read and Vectorize Edit). search_docs keeps serving the previous index."
+            echo "ready=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "ready=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Checkout repository
+        if: steps.credentials.outputs.ready == 'true'
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        if: steps.credentials.outputs.ready == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.credentials.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Re-index content and delete stale vectors
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_TOKENIZE }}
+        run: npx tsx scripts/index-content.ts
+
+      - name: Record indexed commit
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          DOCS_COMMIT: ${{ steps.docs.outputs.commit }}
+        run: echo "${DOCS_COMMIT}" > .reindex-stamp
+
+      - name: Save indexed commit
+        if: steps.credentials.outputs.ready == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .reindex-stamp
+          key: ${{ steps.docs.outputs.key }}
