@@ -12,6 +12,7 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { PIPELINE_EXAMPLES, getExampleSearchText } from '../src/examples-registry';
+import { chunked, classifyResponse, planStaleDeletes, type FetchOutcome } from './index-reconcile';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -20,10 +21,12 @@ function getAccountIdFromWrangler(): string {
     const wranglerPath = join(__dirname, '..', 'wrangler.toml');
     const content = readFileSync(wranglerPath, 'utf-8');
     const match = content.match(/account_id\s*=\s*"([^"]+)"/);
+
     if (match) return match[1];
   } catch {
     // Fall through to env var
   }
+
   return process.env.CLOUDFLARE_ACCOUNT_ID || '';
 }
 
@@ -40,16 +43,13 @@ const RESOURCES = [
   'https://docs.expanso.io/llms/getting-started.txt',
   'https://docs.expanso.io/llms/cli.txt',
   'https://docs.expanso.io/llms/components.txt',
-  'https://docs.expanso.io/llms/operations.txt',
   'https://docs.expanso.io/llms/guides.txt',
 
   // examples.expanso.io
   'https://examples.expanso.io/llms.txt',
-  'https://examples.expanso.io/llms/data-routing.txt',
-  'https://examples.expanso.io/llms/data-security.txt',
-  'https://examples.expanso.io/llms/data-transformation.txt',
-  'https://examples.expanso.io/llms/log-processing.txt',
 ];
+
+const VECTORIZE_INDEX = 'expanso-docs';
 
 interface Chunk {
   id: string;
@@ -76,20 +76,30 @@ async function main() {
   const startTime = Date.now();
   console.log('Fetching content in parallel...');
 
-  // Fetch all URLs in parallel
-  const fetchResults = await Promise.allSettled(
+  // Fetch all URLs in parallel, keeping why each one failed: a removed page
+  // lets its old vectors be deleted, a transient failure must not.
+  const outcomes: FetchOutcome[] = [];
+  const fetched: Array<{ uri: string; content: string }> = [];
+
+  await Promise.all(
     RESOURCES.map(async (uri) => {
-      const response = await fetch(uri);
-      if (!response.ok) return null;
-      return { uri, content: await response.text() };
+      try {
+        const response = await fetch(uri);
+        const outcome = classifyResponse(uri, response.status);
+        outcomes.push(outcome);
+
+        if (outcome.status === 'ok') fetched.push({ uri, content: await response.text() });
+        else console.warn(`Skipping ${uri}: HTTP ${response.status}`);
+      } catch (error) {
+        outcomes.push({ uri, status: 'failed', detail: String(error) });
+        console.warn(`Skipping ${uri}: ${error}`);
+      }
     })
   );
 
   const chunks: Chunk[] = [];
-  for (const result of fetchResults) {
-    if (result.status === 'rejected' || !result.value) continue;
 
-    const { uri, content } = result.value;
+  for (const { uri, content } of fetched) {
     const domain = new URL(uri).hostname;
     const title = extractTitle(content);
     const sections = splitByHeadings(content);
@@ -114,6 +124,7 @@ async function main() {
 
   // Add pipeline examples to chunks
   console.log(`Adding ${PIPELINE_EXAMPLES.length} pipeline examples...`);
+
   for (const example of PIPELINE_EXAMPLES) {
     const searchText = getExampleSearchText(example);
     chunks.push({
@@ -134,6 +145,7 @@ async function main() {
 
   if (chunks.length === 0) {
     console.log('No chunks to index');
+
     return;
   }
 
@@ -142,12 +154,14 @@ async function main() {
   // Process in larger batches, run embedding + upsert in parallel per batch
   const batchSize = 20; // Larger batches = fewer API calls
   const batches: Chunk[][] = [];
+
   for (let i = 0; i < chunks.length; i += batchSize) {
     batches.push(chunks.slice(i, i + batchSize));
   }
 
   // Process batches with limited concurrency (2 at a time to avoid rate limits)
   const concurrency = 2;
+
   for (let i = 0; i < batches.length; i += concurrency) {
     const batchGroup = batches.slice(i, i + concurrency);
 
@@ -173,11 +187,121 @@ async function main() {
     console.log(`  ${processed}/${chunks.length} chunks indexed`);
   }
 
+  await deleteStaleVectors(new Set(chunks.map((c) => c.id)), outcomes, accountId, apiToken);
+
   console.log(`\nDone in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+}
+
+async function deleteStaleVectors(
+  currentIds: ReadonlySet<string>,
+  outcomes: readonly FetchOutcome[],
+  accountId: string,
+  apiToken: string
+): Promise<void> {
+  const existingIds = await listVectorIds(accountId, apiToken);
+  const plan = planStaleDeletes(existingIds, currentIds, outcomes);
+
+  if (plan.action === 'skip') {
+    console.warn(`Not deleting stale vectors: ${plan.reason}`);
+
+    return;
+  }
+
+  console.log(`Deleting ${plan.ids.length} stale vector(s) of ${existingIds.length}`);
+
+  for (const ids of chunked(plan.ids, 100)) {
+    await vectorizeRequest(accountId, apiToken, 'delete_by_ids', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    console.log(`  deleted: ${ids.join(', ')}`);
+  }
+}
+
+interface VectorIdPage {
+  ids: string[];
+  nextCursor: string | undefined;
+}
+
+async function listVectorIds(accountId: string, apiToken: string): Promise<string[]> {
+  const ids: string[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const query = new URLSearchParams({ count: '1000' });
+
+    if (cursor) query.set('cursor', cursor);
+
+    const response = await vectorizeRequest(accountId, apiToken, `list?${query}`, {
+      method: 'GET',
+    });
+
+    const page = await readVectorIdPage(response);
+
+    ids.push(...page.ids);
+    cursor = page.nextCursor;
+  } while (cursor);
+
+  return ids;
+}
+
+/**
+ * Reads the documented list-vectors result. Any other shape is an API change,
+ * and a partial ID list would hide stale vectors, so both fail the run.
+ */
+async function readVectorIdPage(response: Response): Promise<VectorIdPage> {
+  const body: unknown = await response.json();
+  const result = body instanceof Object && 'result' in body ? body.result : undefined;
+
+  if (!(result instanceof Object) || !('vectors' in result) || !Array.isArray(result.vectors)) {
+    throw new Error('Vectorize list returned no vectors array');
+  }
+
+  const vectors: unknown[] = result.vectors;
+  const ids: string[] = [];
+
+  for (const vector of vectors) {
+    if (!(vector instanceof Object) || !('id' in vector) || vector.id == null) {
+      throw new Error('Vectorize list returned a vector without an id');
+    }
+
+    ids.push(String(vector.id));
+  }
+
+  const truncated = 'isTruncated' in result && result.isTruncated === true;
+  const cursor = 'nextCursor' in result && result.nextCursor != null ? String(result.nextCursor) : '';
+
+  if (truncated && cursor === '') {
+    throw new Error('Vectorize list is truncated but returned no cursor');
+  }
+
+  return { ids, nextCursor: truncated ? cursor : undefined };
+}
+
+async function vectorizeRequest(
+  accountId: string,
+  apiToken: string,
+  path: string,
+  init: RequestInit
+): Promise<Response> {
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${VECTORIZE_INDEX}/${path}`,
+    { ...init, headers: { ...init.headers, Authorization: `Bearer ${apiToken}` } }
+  );
+
+  if (!response.ok) {
+    const operation = path.split('?')[0];
+
+    throw new Error(`Vectorize ${operation} error: ${response.status} - ${await response.text()}`);
+  }
+
+  return response;
 }
 
 function extractTitle(content: string): string {
   const match = content.match(/^#\s+(.+)$/m);
+
   return match ? match[1] : 'Untitled';
 }
 
@@ -189,6 +313,7 @@ function splitByHeadings(content: string): Array<{ heading: string; content: str
 
   for (const line of lines) {
     const h2Match = line.match(/^##\s+(.+)$/);
+
     if (h2Match) {
       if (currentContent.length > 0) {
         sections.push({
@@ -196,6 +321,7 @@ function splitByHeadings(content: string): Array<{ heading: string; content: str
           content: currentContent.join('\n').trim(),
         });
       }
+
       currentHeading = h2Match[1];
       currentContent = [];
     } else {
@@ -219,6 +345,7 @@ function generateId(uri: string, section: string): string {
   const base = uri.replace(/https?:\/\//, '').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
   const sectionSlug = section.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_').slice(0, 25);
   const id = `${base}_${sectionSlug}`;
+
   // Vectorize max ID is 64 bytes
   return id.slice(0, 64);
 }
@@ -244,8 +371,24 @@ async function generateEmbeddings(
     throw new Error(`Embedding API error: ${response.status}`);
   }
 
-  const result = await response.json();
-  return (result as { result: { data: number[][] } }).result.data;
+  const body: unknown = await response.json();
+  const result = body instanceof Object && 'result' in body ? body.result : undefined;
+  const data = result instanceof Object && 'data' in result ? result.data : undefined;
+
+  if (!Array.isArray(data) || data.length !== texts.length) {
+    throw new Error('Embedding API did not return one embedding per text');
+  }
+
+  const rows: unknown[] = data;
+  const embeddings: number[][] = [];
+
+  for (const row of rows) {
+    if (!Array.isArray(row)) throw new Error('Embedding API returned a non-array embedding');
+
+    embeddings.push(row.map(Number));
+  }
+
+  return embeddings;
 }
 
 async function upsertVectors(
@@ -271,4 +414,7 @@ async function upsertVectors(
   }
 }
 
-main().catch(console.error);
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

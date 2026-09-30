@@ -91,12 +91,6 @@ const RESOURCES: Resource[] = [
     mimeType: 'text/plain',
   },
   {
-    uri: 'https://docs.expanso.io/llms/operations.txt',
-    name: 'Operations',
-    description: 'Deployment, monitoring, and scaling',
-    mimeType: 'text/plain',
-  },
-  {
     uri: 'https://docs.expanso.io/llms/guides.txt',
     name: 'How-To Guides',
     description: 'Practical integration and configuration guides',
@@ -108,30 +102,6 @@ const RESOURCES: Resource[] = [
     uri: 'https://examples.expanso.io/llms.txt',
     name: 'Examples Index',
     description: 'Production-ready pipeline examples',
-    mimeType: 'text/plain',
-  },
-  {
-    uri: 'https://examples.expanso.io/llms/data-routing.txt',
-    name: 'Data Routing',
-    description: 'Circuit breakers, fan-out, priority queues',
-    mimeType: 'text/plain',
-  },
-  {
-    uri: 'https://examples.expanso.io/llms/data-security.txt',
-    name: 'Data Security',
-    description: 'PII removal, encryption, schema validation',
-    mimeType: 'text/plain',
-  },
-  {
-    uri: 'https://examples.expanso.io/llms/data-transformation.txt',
-    name: 'Data Transformation',
-    description: 'Time windows, deduplication, format conversion',
-    mimeType: 'text/plain',
-  },
-  {
-    uri: 'https://examples.expanso.io/llms/log-processing.txt',
-    name: 'Log Processing',
-    description: 'Filtering, enrichment, production pipelines',
     mimeType: 'text/plain',
   },
 ];
@@ -167,16 +137,16 @@ export async function handleSearch(
     let results: SearchResult[] = vectorResults.matches
       .filter((match) => {
         if (!domain) return true;
-        const matchDomain = (match.metadata?.domain as string) || '';
-        return matchDomain.includes(domain);
+
+        return metadataText(match.metadata, 'domain').includes(domain);
       })
       .slice(0, limit)
       .map((match) => ({
-        uri: (match.metadata?.uri as string) || '',
-        title: (match.metadata?.title as string) || 'Untitled',
-        snippet: (match.metadata?.snippet as string) || '',
+        uri: metadataText(match.metadata, 'uri'),
+        title: metadataText(match.metadata, 'title') || 'Untitled',
+        snippet: metadataText(match.metadata, 'snippet'),
         score: match.score,
-        domain: (match.metadata?.domain as string) || '',
+        domain: metadataText(match.metadata, 'domain'),
       }));
 
     // If no vector results (index not populated), fall back to keyword search
@@ -187,6 +157,7 @@ export async function handleSearch(
     return { results, query };
   } catch (error) {
     console.error('Search error:', error);
+
     // Fall back to keyword search on any error
     return {
       results: await fallbackKeywordSearch(env, query, limit, domain),
@@ -220,6 +191,7 @@ async function fallbackKeywordSearch(
     for (const term of queryTerms) {
       if (text.includes(term)) {
         score += 1;
+
         // Boost for exact name match
         if (resource.name.toLowerCase().includes(term)) {
           score += 0.5;
@@ -259,15 +231,18 @@ export async function handleReadResource(
 ): Promise<ContentResponse | null> {
   // Validate URI is in our allowed list
   const resource = RESOURCES.find((r) => r.uri === uri);
+
   if (!resource) {
     return null;
   }
 
   // Check cache first (if KV is available)
   const cacheKey = `content:${uri}`;
+
   if (env.CONTENT_CACHE) {
     try {
       const cached = await env.CONTENT_CACHE.get(cacheKey);
+
       if (cached) {
         return JSON.parse(cached);
       }
@@ -286,10 +261,12 @@ export async function handleReadResource(
 
     if (!response.ok) {
       console.error(`Failed to fetch ${uri}: ${response.status}`);
+
       return null;
     }
 
     const content = await response.text();
+
     const result: ContentResponse = {
       uri,
       content,
@@ -311,6 +288,7 @@ export async function handleReadResource(
     return result;
   } catch (error) {
     console.error(`Error fetching ${uri}:`, error);
+
     return null;
   }
 }
@@ -318,6 +296,13 @@ export async function handleReadResource(
 /**
  * Generate embedding using Workers AI
  */
+/** scripts/index-content.ts writes every metadata value as a string. */
+function metadataText(metadata: VectorizeMatch['metadata'], key: string): string {
+  const value = metadata?.[key];
+
+  return value == null ? '' : String(value);
+}
+
 async function generateEmbedding(env: Env, text: string): Promise<number[]> {
   const result = await env.AI.run('@cf/baai/bge-base-en-v1.5', {
     text: [text],
@@ -325,7 +310,9 @@ async function generateEmbedding(env: Env, text: string): Promise<number[]> {
 
   // AI.run returns { data: [[...embedding]] }
   if (result && 'data' in result && Array.isArray(result.data) && result.data.length > 0) {
-    return result.data[0] as number[];
+    const embedding: unknown = result.data[0];
+
+    if (Array.isArray(embedding)) return embedding.map(Number);
   }
 
   throw new Error('Failed to generate embedding');
