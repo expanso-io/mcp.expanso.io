@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   chunked,
   classifyResponse,
+  cloudflareErrorCodes,
   listAllVectorIds,
   planStaleDeletes,
   retryTransient,
   summarizeErrorBody,
   VECTOR_LIST_PAGE_SIZE,
+  waitForAppliedMutations,
 } from './index-reconcile';
 
 const ok = (uri: string) => classifyResponse(uri, 200);
@@ -182,5 +184,144 @@ describe('summarizeErrorBody', () => {
 
     expect(long).toHaveLength(303);
     expect(long.endsWith('...')).toBe(true);
+  });
+});
+
+// Shaped like a real cursor: base64 with the characters form encoding must escape.
+const REALISTIC_CURSOR = 'eyJzbmFwc2hvdCI6IjAxOTNh+ZTRmLTc2YjEiLCJvZmZzZXQiOjEwMH0/Ab9=';
+
+function rejectedCursor(): Response {
+  return Response.json(
+    {
+      result: null,
+      success: false,
+      errors: [{ code: 40052, message: 'List vectors cursor appears to be corrupted' }],
+    },
+    { status: 400 }
+  );
+}
+
+describe('listAllVectorIds cursors', () => {
+  it('sends the previous page cursor back unchanged', async () => {
+    const sent: string[] = [];
+    const pages = [listPage(['a'], REALISTIC_CURSOR), listPage(['b'])];
+
+    await listAllVectorIds(async (query) => {
+      sent.push(query.toString());
+
+      return pages[sent.length - 1];
+    });
+
+    const second = new URLSearchParams(sent[1]);
+
+    expect(second.get('cursor')).toBe(REALISTIC_CURSOR);
+    expect(sent[1]).toContain('%2B');
+    expect(sent[1]).toContain('%2F');
+    expect(sent[1]).toContain('%3D');
+  });
+
+  it('lists again from the start when Cloudflare rejects a cursor', async () => {
+    const responses = [
+      listPage(['a', 'b'], REALISTIC_CURSOR),
+      rejectedCursor(),
+      listPage(['a', 'b'], 'next'),
+      listPage(['c']),
+    ];
+
+    const cursors: Array<string | null> = [];
+
+    const ids = await listAllVectorIds(async (query) => {
+      cursors.push(query.get('cursor'));
+
+      return responses[cursors.length - 1];
+    });
+
+    expect(ids).toEqual(['a', 'b', 'c']);
+    expect(cursors).toEqual([null, REALISTIC_CURSOR, null, 'next']);
+  });
+
+  it('gives up after the restart limit with the page and the API message', async () => {
+    let calls = 0;
+
+    const listing = listAllVectorIds(
+      async () => {
+        calls += 1;
+
+        return calls % 2 === 1 ? listPage(['a'], REALISTIC_CURSOR) : rejectedCursor();
+      },
+      { restarts: 1 }
+    );
+
+    await expect(listing).rejects.toThrow(
+      /rejected its own cursor 2 time\(s\), last at page 2: .*cursor appears to be corrupted/
+    );
+    expect(calls).toBe(4);
+  });
+
+  it('fails at once on other errors, including a 40052 without a cursor', async () => {
+    await expect(listAllVectorIds(async () => rejectedCursor())).rejects.toThrow(
+      'Vectorize list returned HTTP 400'
+    );
+
+    const forbidden = Response.json({ errors: [{ code: 10000 }] }, { status: 403 });
+
+    await expect(listAllVectorIds(async () => forbidden)).rejects.toThrow('HTTP 403');
+  });
+});
+
+describe('cloudflareErrorCodes', () => {
+  it('reads codes from an error envelope and ignores anything else', () => {
+    expect(cloudflareErrorCodes('{"errors":[{"code":40052},{"code":"7003"}]}')).toEqual([40052, 7003]);
+    expect(cloudflareErrorCodes('<html>504</html>')).toEqual([]);
+    expect(cloudflareErrorCodes('{"errors":null}')).toEqual([]);
+  });
+});
+
+function info(processedUpToDatetime: string | null): Response {
+  return Response.json({ success: true, result: { vectorCount: 1139, processedUpToDatetime } });
+}
+
+describe('waitForAppliedMutations', () => {
+  const since = Date.parse('2026-09-30T19:25:40Z');
+
+  it('returns once the index has processed past the last upsert', async () => {
+    const answers = [info(null), info('2026-09-30T19:25:39.900Z'), info('2026-09-30T19:25:41.250Z')];
+    let polls = 0;
+
+    await waitForAppliedMutations({
+      readInfo: async () => answers[polls++],
+      since,
+      sleep: async () => undefined,
+    });
+
+    expect(polls).toBe(3);
+  });
+
+  it('times out with what the index last reported', async () => {
+    let clock = 0;
+
+    const waiting = waitForAppliedMutations({
+      readInfo: async () => info('2026-09-30T19:25:10Z'),
+      since,
+      timeoutMs: 10_000,
+      pollMs: 5_000,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+
+    await expect(waiting).rejects.toThrow(
+      "had not applied this run's upserts after 10s (processed up to 2026-09-30T19:25:10.000Z)"
+    );
+  });
+
+  it('fails when the info call itself fails', async () => {
+    const waiting = waitForAppliedMutations({
+      readInfo: async () => Response.json({ errors: [{ code: 10000 }] }, { status: 403 }),
+      since,
+    });
+
+    await expect(waiting).rejects.toThrow('Vectorize info returned HTTP 403');
   });
 });

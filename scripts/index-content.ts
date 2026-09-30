@@ -19,6 +19,7 @@ import {
   planStaleDeletes,
   retryTransient,
   summarizeErrorBody,
+  waitForAppliedMutations,
   type FetchOutcome,
 } from './index-reconcile';
 
@@ -169,6 +170,8 @@ async function main() {
 
   // Process batches with limited concurrency (2 at a time to avoid rate limits)
   const concurrency = 2;
+  // Server time of the latest upsert; cleanup waits until Vectorize applies it.
+  let lastUpsertAt = 0;
 
   for (let i = 0; i < batches.length; i += concurrency) {
     const batchGroup = batches.slice(i, i + concurrency);
@@ -187,7 +190,9 @@ async function main() {
           metadata: chunk.metadata,
         }));
 
-        await upsertVectors(vectors, accountId, apiToken);
+        const upsertedAt = await upsertVectors(vectors, accountId, apiToken);
+
+        lastUpsertAt = Math.max(lastUpsertAt, upsertedAt);
       })
     );
 
@@ -196,7 +201,13 @@ async function main() {
   }
 
   try {
-    await deleteStaleVectors(new Set(chunks.map((c) => c.id)), outcomes, accountId, apiToken);
+    await deleteStaleVectors(
+      new Set(chunks.map((c) => c.id)),
+      outcomes,
+      lastUpsertAt,
+      accountId,
+      apiToken
+    );
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
 
@@ -212,9 +223,15 @@ async function main() {
 async function deleteStaleVectors(
   currentIds: ReadonlySet<string>,
   outcomes: readonly FetchOutcome[],
+  lastUpsertAt: number,
   accountId: string,
   apiToken: string
 ): Promise<void> {
+  await waitForAppliedMutations({
+    readInfo: () => vectorizeFetch(accountId, apiToken, 'info', { method: 'GET' }),
+    since: lastUpsertAt,
+  });
+
   const existingIds = await listVectorIds(accountId, apiToken);
   const plan = planStaleDeletes(existingIds, currentIds, outcomes);
 
@@ -238,7 +255,22 @@ async function deleteStaleVectors(
 
 async function listVectorIds(accountId: string, apiToken: string): Promise<string[]> {
   return listAllVectorIds((query) =>
-    vectorizeRequest(accountId, apiToken, `list?${query}`, { method: 'GET' })
+    vectorizeFetch(accountId, apiToken, `list?${query}`, { method: 'GET' })
+  );
+}
+
+/** Calls the Vectorize index API, retrying gateway errors; the caller checks the status. */
+function vectorizeFetch(
+  accountId: string,
+  apiToken: string,
+  path: string,
+  init: RequestInit
+): Promise<Response> {
+  return retryTransient(() =>
+    fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${VECTORIZE_INDEX}/${path}`,
+      { ...init, headers: { ...init.headers, Authorization: `Bearer ${apiToken}` } }
+    )
   );
 }
 
@@ -248,12 +280,7 @@ async function vectorizeRequest(
   path: string,
   init: RequestInit
 ): Promise<Response> {
-  const response = await retryTransient(() =>
-    fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${VECTORIZE_INDEX}/${path}`,
-      { ...init, headers: { ...init.headers, Authorization: `Bearer ${apiToken}` } }
-    )
-  );
+  const response = await vectorizeFetch(accountId, apiToken, path, init);
 
   if (!response.ok) {
     const operation = path.split('?')[0];
@@ -362,7 +389,7 @@ async function upsertVectors(
   vectors: Array<{ id: string; values: number[]; metadata: Record<string, string> }>,
   accountId: string,
   apiToken: string
-): Promise<void> {
+): Promise<number> {
   const response = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/expanso-docs/upsert`,
     {
@@ -379,6 +406,11 @@ async function upsertVectors(
     const error = await response.text();
     throw new Error(`Vectorize upsert error: ${response.status} - ${error}`);
   }
+
+  // The server clock, so the wait in deleteStaleVectors is immune to runner clock skew.
+  const serverTime = Date.parse(response.headers.get('date') ?? '');
+
+  return Number.isNaN(serverTime) ? Date.now() : serverTime;
 }
 
 main().catch((error) => {
