@@ -1,9 +1,10 @@
 /**
  * Decide which Vectorize entries a re-index should delete.
  *
- * Upserting alone never removes anything: a chunk ID comes from its URL and
- * H2 heading, so a renamed or deleted docs section leaves its old vector
- * behind and search keeps returning advice the docs no longer give. After
+ * Upserting alone never removes anything: a chunk ID hashes its URL, H2
+ * heading, and position on the page, so a renamed, moved, or deleted docs
+ * section leaves its old vector behind and search keeps returning advice the
+ * docs no longer give. After
  * each upsert, every ID the run did not produce is stale.
  *
  * Kept free of I/O so the rules are unit-tested.

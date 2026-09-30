@@ -1,0 +1,68 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  assertUniqueChunkIds,
+  createDocumentChunks,
+  generateId,
+} from './index-content';
+import { classifyResponse, planStaleDeletes } from './index-reconcile';
+
+const LONG_CONTENT = 'This section is deliberately longer than fifty characters so it becomes a chunk.';
+
+const fetched = [
+  {
+    uri: 'https://docs.expanso.io/llms/shared-prefix-alpha.txt',
+    content: `# Alpha\n\n${LONG_CONTENT}\n## Repeated heading\n${LONG_CONTENT}\n## Repeated heading\n${LONG_CONTENT}`,
+  },
+  {
+    uri: 'https://docs.expanso.io/llms/shared-prefix-beta.txt',
+    content: `# Beta\n\n${LONG_CONTENT}\n## Repeated heading\n${LONG_CONTENT}\n## Repeated heading\n${LONG_CONTENT}`,
+  },
+];
+
+describe('document chunk IDs', () => {
+  it('creates one unique Vectorize ID per indexed chunk', () => {
+    const chunks = createDocumentChunks(fetched);
+    const ids = chunks.map((chunk) => chunk.id);
+
+    expect(chunks).toHaveLength(6);
+    expect(new Set(ids).size).toBe(chunks.length);
+    expect(ids.every((id) => /^[a-f0-9]{64}$/.test(id))).toBe(true);
+    expect(ids.every((id) => Buffer.byteLength(id) <= 64)).toBe(true);
+  });
+
+  it('uses the full URI and section ordinal as ID inputs', () => {
+    const firstUri = 'https://docs.expanso.io/llms/shared-prefix-alpha.txt';
+    const secondUri = 'https://docs.expanso.io/llms/shared-prefix-beta.txt';
+
+    expect(generateId(firstUri, 'Repeated heading', 0)).not.toBe(
+      generateId(secondUri, 'Repeated heading', 0)
+    );
+    expect(generateId(firstUri, 'Repeated heading', 0)).not.toBe(
+      generateId(firstUri, 'Repeated heading', 1)
+    );
+  });
+
+  it('fails before indexing duplicate IDs', () => {
+    expect(() => assertUniqueChunkIds([{ id: 'same' }, { id: 'same' }])).toThrow(
+      'Duplicate vector ID same for chunks 1 and 2'
+    );
+  });
+
+  it('marks every old-format ID stale after a successful re-index', () => {
+    const currentIds = new Set(createDocumentChunks(fetched).map((chunk) => chunk.id));
+
+    const oldIds = [
+      'docs_expanso_io_llms_shared_pr_introduction',
+      'docs_expanso_io_llms_shared_pr_repeated_heading',
+    ];
+
+    const existingIds = [...currentIds, ...oldIds];
+    const outcomes = fetched.map(({ uri }) => classifyResponse(uri, 200));
+
+    expect(planStaleDeletes(existingIds, currentIds, outcomes)).toEqual({
+      action: 'delete',
+      ids: oldIds,
+    });
+  });
+});
