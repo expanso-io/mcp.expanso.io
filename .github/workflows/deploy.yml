@@ -51,12 +51,37 @@ jobs:
           CI: 'true'
         run: npx vitest run
 
-      # Same command as `just deploy-worker`; --env="" selects the top-level
-      # (production) environment in wrangler.toml.
-      - name: Deploy Worker
+      # `wrangler deploy` also reconciles the mcp.expanso.io route, which needs a
+      # zone permission this token deliberately lacks. Uploading a version and
+      # then deploying it changes only the script: the route stays exactly as
+      # configured in Cloudflare. --env="" selects the top-level (production)
+      # environment in wrangler.toml, as `just deploy-worker` does.
+      - name: Upload Worker version
+        id: upload
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_WORKERS_DEPLOY }}
-        run: npx wrangler deploy --env=""
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          npx wrangler versions upload --env="" --message "main ${COMMIT_SHA}"
+          version_id=$(jq -r 'select(.type == "version-upload") | .version_id' \
+            "${WRANGLER_OUTPUT_FILE_PATH}" | tail -n 1)
+          if [[ -z "${version_id}" || "${version_id}" == "null" ]]; then
+            echo "::error title=Worker upload::wrangler reported no version ID"
+            exit 1
+          fi
+          echo "version_id=${version_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Deploy uploaded version to all traffic
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_WORKERS_DEPLOY }}
+          VERSION_ID: ${{ steps.upload.outputs.version_id }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          npx wrangler versions deploy --env="" --yes \
+            --version-id "${VERSION_ID}" --percentage 100 \
+            --message "main ${COMMIT_SHA}"
 
       # Every resource the deployed server advertises must exist. A new
       # version can take a few seconds to reach every edge, hence the retries.

@@ -97,8 +97,10 @@ npm run dev
 ```
 
 Pushes to `main` deploy automatically through `.github/workflows/deploy.yml`
-(`wrangler deploy --env=""`), which then checks that every resource the live
-server lists resolves. It needs the repository secret
+(`wrangler versions upload`, then `wrangler versions deploy` at 100%), which
+then checks that every resource the live server lists resolves. It does not
+manage the `mcp.expanso.io` route: that stays as configured in Cloudflare, so
+the deploy token needs no zone permission. It needs the repository secret
 `CLOUDFLARE_API_TOKEN_WORKERS_DEPLOY` (Account > Workers Scripts > Edit) and
 fails if it is missing.
 
