@@ -9,8 +9,9 @@
  */
 
 import { readFileSync } from 'fs';
+import { createHash } from 'node:crypto';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { PIPELINE_EXAMPLES, getExampleSearchText } from '../src/examples-registry';
 import {
   chunked,
@@ -60,7 +61,7 @@ const RESOURCES = [
 
 const VECTORIZE_INDEX = 'expanso-docs';
 
-interface Chunk {
+export interface Chunk {
   id: string;
   text: string;
   metadata: {
@@ -71,6 +72,11 @@ interface Chunk {
     section: string;
     type: 'doc' | 'example';
   };
+}
+
+interface FetchedContent {
+  uri: string;
+  content: string;
 }
 
 async function main() {
@@ -88,7 +94,7 @@ async function main() {
   // Fetch all URLs in parallel, keeping why each one failed: a removed page
   // lets its old vectors be deleted, a transient failure must not.
   const outcomes: FetchOutcome[] = [];
-  const fetched: Array<{ uri: string; content: string }> = [];
+  const fetched: FetchedContent[] = [];
 
   await Promise.all(
     RESOURCES.map(async (uri) => {
@@ -106,28 +112,7 @@ async function main() {
     })
   );
 
-  const chunks: Chunk[] = [];
-
-  for (const { uri, content } of fetched) {
-    const domain = new URL(uri).hostname;
-    const title = extractTitle(content);
-    const sections = splitByHeadings(content);
-
-    for (const section of sections) {
-      chunks.push({
-        id: generateId(uri, section.heading),
-        text: section.content,
-        metadata: {
-          uri,
-          domain,
-          title,
-          snippet: section.content.slice(0, 200),
-          section: section.heading,
-          type: 'doc',
-        },
-      });
-    }
-  }
+  const chunks = createDocumentChunks(fetched);
 
   console.log(`Fetched ${RESOURCES.length} URLs, created ${chunks.length} doc chunks in ${Date.now() - startTime}ms`);
 
@@ -149,6 +134,8 @@ async function main() {
       },
     });
   }
+
+  assertUniqueChunkIds(chunks);
 
   console.log(`Total chunks to index: ${chunks.length} (${chunks.filter(c => c.metadata.type === 'doc').length} docs + ${chunks.filter(c => c.metadata.type === 'example').length} examples)`);
 
@@ -299,6 +286,33 @@ function extractTitle(content: string): string {
   return match ? match[1] : 'Untitled';
 }
 
+export function createDocumentChunks(fetched: readonly FetchedContent[]): Chunk[] {
+  const chunks: Chunk[] = [];
+
+  for (const { uri, content } of fetched) {
+    const domain = new URL(uri).hostname;
+    const title = extractTitle(content);
+    const sections = splitByHeadings(content);
+
+    for (const [sectionOrdinal, section] of sections.entries()) {
+      chunks.push({
+        id: generateId(uri, section.heading, sectionOrdinal),
+        text: section.content,
+        metadata: {
+          uri,
+          domain,
+          title,
+          snippet: section.content.slice(0, 200),
+          section: section.heading,
+          type: 'doc',
+        },
+      });
+    }
+  }
+
+  return chunks;
+}
+
 function splitByHeadings(content: string): Array<{ heading: string; content: string }> {
   const lines = content.split('\n');
   const sections: Array<{ heading: string; content: string }> = [];
@@ -335,13 +349,26 @@ function splitByHeadings(content: string): Array<{ heading: string; content: str
   return sections.filter((s) => s.content.length > 50);
 }
 
-function generateId(uri: string, section: string): string {
-  const base = uri.replace(/https?:\/\//, '').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
-  const sectionSlug = section.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_').slice(0, 25);
-  const id = `${base}_${sectionSlug}`;
+export function generateId(uri: string, section: string, sectionOrdinal: number): string {
+  return createHash('sha256')
+    .update(JSON.stringify([uri, section, sectionOrdinal]))
+    .digest('hex');
+}
 
-  // Vectorize max ID is 64 bytes
-  return id.slice(0, 64);
+export function assertUniqueChunkIds(chunks: readonly Pick<Chunk, 'id'>[]): void {
+  const firstIndexById = new Map<string, number>();
+
+  for (const [index, chunk] of chunks.entries()) {
+    const firstIndex = firstIndexById.get(chunk.id);
+
+    if (firstIndex !== undefined) {
+      throw new Error(
+        `Duplicate vector ID ${chunk.id} for chunks ${firstIndex + 1} and ${index + 1}`
+      );
+    }
+
+    firstIndexById.set(chunk.id, index);
+  }
 }
 
 async function generateEmbeddings(
@@ -413,12 +440,14 @@ async function upsertVectors(
   return Number.isNaN(serverTime) ? Date.now() : serverTime;
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
 
-  // An annotation puts the cause on the workflow run summary, not deep in the log.
-  console.error(
-    process.env.GITHUB_ACTIONS === 'true' ? `::error title=Docs re-index failed::${message}` : message
-  );
-  process.exitCode = 1;
-});
+    // An annotation puts the cause on the workflow run summary, not deep in the log.
+    console.error(
+      process.env.GITHUB_ACTIONS === 'true' ? `::error title=Docs re-index failed::${message}` : message
+    );
+    process.exitCode = 1;
+  });
+}
