@@ -1,0 +1,87 @@
+name: Deploy Worker
+
+# Deploys the Worker behind mcp.expanso.io from main. Until this existed the
+# Worker was only deployed from a laptop, so fixes merged here (for example a
+# resource removed from src/handlers.ts) did not reach production.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Unlike the re-index job, a deploy without credentials is a failure:
+      # main would silently drift from what mcp.expanso.io serves.
+      - name: Check deploy credentials
+        env:
+          CLOUDFLARE_API_TOKEN_WORKERS_DEPLOY: ${{ secrets.CLOUDFLARE_API_TOKEN_WORKERS_DEPLOY }}
+        run: |
+          if [[ -z "${CLOUDFLARE_API_TOKEN_WORKERS_DEPLOY}" ]]; then
+            echo "::error title=Worker deploy blocked::Repository secret CLOUDFLARE_API_TOKEN_WORKERS_DEPLOY is not set. It needs Account > Workers Scripts > Edit on the account in wrangler.toml."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        env:
+          CI: 'true'
+        run: npx vitest run
+
+      # Same command as `just deploy-worker`; --env="" selects the top-level
+      # (production) environment in wrangler.toml.
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_WORKERS_DEPLOY }}
+        run: npx wrangler deploy --env=""
+
+      # Every resource the deployed server advertises must exist. A new
+      # version can take a few seconds to reach every edge, hence the retries.
+      - name: Verify advertised resources resolve
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 10); do
+            uris=$(curl -fsS -X POST https://mcp.expanso.io/mcp \
+              -H 'Content-Type: application/json' \
+              -H 'Accept: application/json, text/event-stream' \
+              --data '{"jsonrpc":"2.0","id":"deploy-check","method":"resources/list","params":{}}' |
+              jq -er '.result.resources[].uri')
+            dead=()
+            while IFS= read -r uri; do
+              status=$(curl -sS -o /dev/null -w '%{http_code}' "${uri}")
+              if [[ "${status}" == "404" || "${status}" == "410" ]]; then
+                dead+=("${uri} (${status})")
+              fi
+            done <<< "${uris}"
+            if (( ${#dead[@]} == 0 )); then
+              echo "All $(wc -l <<< "${uris}") advertised resources resolve."
+              exit 0
+            fi
+            echo "Attempt ${attempt}: advertised resources not found: ${dead[*]}"
+            sleep 6
+          done
+          echo "::error title=Dead resources advertised::mcp.expanso.io still lists: ${dead[*]}"
+          exit 1
