@@ -12,7 +12,15 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { PIPELINE_EXAMPLES, getExampleSearchText } from '../src/examples-registry';
-import { chunked, classifyResponse, planStaleDeletes, type FetchOutcome } from './index-reconcile';
+import {
+  chunked,
+  classifyResponse,
+  listAllVectorIds,
+  planStaleDeletes,
+  retryTransient,
+  summarizeErrorBody,
+  type FetchOutcome,
+} from './index-reconcile';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -187,7 +195,16 @@ async function main() {
     console.log(`  ${processed}/${chunks.length} chunks indexed`);
   }
 
-  await deleteStaleVectors(new Set(chunks.map((c) => c.id)), outcomes, accountId, apiToken);
+  try {
+    await deleteStaleVectors(new Set(chunks.map((c) => c.id)), outcomes, accountId, apiToken);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+
+    throw new Error(
+      `Upserted ${chunks.length} chunks, but deleting stale vectors failed: ${reason}. ` +
+        'search_docs serves the new content plus any stale vectors until a run succeeds.'
+    );
+  }
 
   console.log(`\nDone in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 }
@@ -219,64 +236,10 @@ async function deleteStaleVectors(
   }
 }
 
-interface VectorIdPage {
-  ids: string[];
-  nextCursor: string | undefined;
-}
-
 async function listVectorIds(accountId: string, apiToken: string): Promise<string[]> {
-  const ids: string[] = [];
-  let cursor: string | undefined;
-
-  do {
-    const query = new URLSearchParams({ count: '1000' });
-
-    if (cursor) query.set('cursor', cursor);
-
-    const response = await vectorizeRequest(accountId, apiToken, `list?${query}`, {
-      method: 'GET',
-    });
-
-    const page = await readVectorIdPage(response);
-
-    ids.push(...page.ids);
-    cursor = page.nextCursor;
-  } while (cursor);
-
-  return ids;
-}
-
-/**
- * Reads the documented list-vectors result. Any other shape is an API change,
- * and a partial ID list would hide stale vectors, so both fail the run.
- */
-async function readVectorIdPage(response: Response): Promise<VectorIdPage> {
-  const body: unknown = await response.json();
-  const result = body instanceof Object && 'result' in body ? body.result : undefined;
-
-  if (!(result instanceof Object) || !('vectors' in result) || !Array.isArray(result.vectors)) {
-    throw new Error('Vectorize list returned no vectors array');
-  }
-
-  const vectors: unknown[] = result.vectors;
-  const ids: string[] = [];
-
-  for (const vector of vectors) {
-    if (!(vector instanceof Object) || !('id' in vector) || vector.id == null) {
-      throw new Error('Vectorize list returned a vector without an id');
-    }
-
-    ids.push(String(vector.id));
-  }
-
-  const truncated = 'isTruncated' in result && result.isTruncated === true;
-  const cursor = 'nextCursor' in result && result.nextCursor != null ? String(result.nextCursor) : '';
-
-  if (truncated && cursor === '') {
-    throw new Error('Vectorize list is truncated but returned no cursor');
-  }
-
-  return { ids, nextCursor: truncated ? cursor : undefined };
+  return listAllVectorIds((query) =>
+    vectorizeRequest(accountId, apiToken, `list?${query}`, { method: 'GET' })
+  );
 }
 
 async function vectorizeRequest(
@@ -285,15 +248,19 @@ async function vectorizeRequest(
   path: string,
   init: RequestInit
 ): Promise<Response> {
-  const response = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${VECTORIZE_INDEX}/${path}`,
-    { ...init, headers: { ...init.headers, Authorization: `Bearer ${apiToken}` } }
+  const response = await retryTransient(() =>
+    fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${VECTORIZE_INDEX}/${path}`,
+      { ...init, headers: { ...init.headers, Authorization: `Bearer ${apiToken}` } }
+    )
   );
 
   if (!response.ok) {
     const operation = path.split('?')[0];
 
-    throw new Error(`Vectorize ${operation} error: ${response.status} - ${await response.text()}`);
+    const detail = summarizeErrorBody(await response.text());
+
+    throw new Error(`Vectorize ${operation} returned HTTP ${response.status}: ${detail}`);
   }
 
   return response;
@@ -415,6 +382,11 @@ async function upsertVectors(
 }
 
 main().catch((error) => {
-  console.error(error);
+  const message = error instanceof Error ? error.message : String(error);
+
+  // An annotation puts the cause on the workflow run summary, not deep in the log.
+  console.error(
+    process.env.GITHUB_ACTIONS === 'true' ? `::error title=Docs re-index failed::${message}` : message
+  );
   process.exitCode = 1;
 });
