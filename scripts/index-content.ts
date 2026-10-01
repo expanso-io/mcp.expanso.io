@@ -21,6 +21,7 @@ import {
   retryTransient,
   summarizeErrorBody,
   type FetchOutcome,
+  type VectorIdListing,
 } from './index-reconcile';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -210,13 +211,14 @@ async function main() {
 export async function deleteStaleVectors(
   currentIds: ReadonlySet<string>,
   outcomes: readonly FetchOutcome[],
-  listExistingIds: () => Promise<string[]>,
+  listExistingIds: () => Promise<VectorIdListing>,
   deleteIds: (ids: string[]) => Promise<void>
 ): Promise<void> {
   // Vectorize may not list this run's newest upserts yet. Cleanup is still
   // safe because it only deletes listed IDs absent from the complete current
   // set, so a current ID can never be selected for deletion.
-  const existingIds = await listExistingIds();
+  const listing = await listExistingIds();
+  const existingIds = listing.ids;
   const plan = planStaleDeletes(existingIds, currentIds, outcomes);
 
   if (plan.action === 'skip') {
@@ -231,9 +233,16 @@ export async function deleteStaleVectors(
     await deleteIds(ids);
     console.log(`  deleted: ${ids.join(', ')}`);
   }
+
+  if (!listing.complete) {
+    console.warn(
+      `Stale cleanup is partial: only ${existingIds.length} listed vector(s) were checked because ${listing.detail}. ` +
+        'Stale vectors past that page remain until a later run lists the whole index.'
+    );
+  }
 }
 
-async function listVectorIds(accountId: string, apiToken: string): Promise<string[]> {
+async function listVectorIds(accountId: string, apiToken: string): Promise<VectorIdListing> {
   return listAllVectorIds((query) =>
     vectorizeFetch(accountId, apiToken, `list?${query}`, { method: 'GET' })
   );

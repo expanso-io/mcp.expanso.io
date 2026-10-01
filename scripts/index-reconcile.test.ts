@@ -95,13 +95,13 @@ describe('listAllVectorIds', () => {
     const queries: URLSearchParams[] = [];
     const pages = [listPage(['a', 'b'], 'c1'), listPage(['c'], 'c2'), listPage(['d'])];
 
-    const ids = await listAllVectorIds(async (query) => {
+    const listing = await listAllVectorIds(async (query) => {
       queries.push(query);
 
       return pages[queries.length - 1];
     });
 
-    expect(ids).toEqual(['a', 'b', 'c', 'd']);
+    expect(listing).toEqual({ complete: true, ids: ['a', 'b', 'c', 'd'] });
     expect(VECTOR_LIST_PAGE_SIZE).toBe(100);
     expect(queries.map((q) => q.get('count'))).toEqual(['100', '100', '100']);
     expect(queries.map((q) => q.get('cursor'))).toEqual([null, 'c1', 'c2']);
@@ -229,32 +229,52 @@ describe('listAllVectorIds cursors', () => {
 
     const cursors: Array<string | null> = [];
 
-    const ids = await listAllVectorIds(async (query) => {
-      cursors.push(query.get('cursor'));
+    const delays: number[] = [];
 
-      return responses[cursors.length - 1];
-    });
+    const listing = await listAllVectorIds(
+      async (query) => {
+        cursors.push(query.get('cursor'));
 
-    expect(ids).toEqual(['a', 'b', 'c']);
+        return responses[cursors.length - 1];
+      },
+      {
+        backoffMs: 5,
+        sleep: async (ms) => {
+          delays.push(ms);
+        },
+      }
+    );
+
+    expect(listing).toEqual({ complete: true, ids: ['a', 'b', 'c'] });
+    expect(delays).toEqual([5]);
     expect(cursors).toEqual([null, REALISTIC_CURSOR, null, 'next']);
   });
 
-  it('gives up after the restart limit with the page and the API message', async () => {
+  it('backs off between restarts and returns the IDs it saw once the limit is reached', async () => {
     let calls = 0;
+    const delays: number[] = [];
 
-    const listing = listAllVectorIds(
+    const listing = await listAllVectorIds(
       async () => {
         calls += 1;
 
         return calls % 2 === 1 ? listPage(['a'], REALISTIC_CURSOR) : rejectedCursor();
       },
-      { restarts: 1 }
+      {
+        restarts: 2,
+        backoffMs: 10,
+        sleep: async (ms) => {
+          delays.push(ms);
+        },
+      }
     );
 
-    await expect(listing).rejects.toThrow(
-      /rejected its own cursor 2 time\(s\), last at page 2: .*cursor appears to be corrupted/
+    expect(listing).toMatchObject({ complete: false, ids: ['a'] });
+    expect(listing.complete === false && listing.detail).toMatch(
+      /rejected its own cursor 3 time\(s\), last at page 2: .*cursor appears to be corrupted/
     );
-    expect(calls).toBe(4);
+    expect(delays).toEqual([10, 20]);
+    expect(calls).toBe(6);
   });
 
   it('fails at once on other errors, including a 40052 without a cursor', async () => {
