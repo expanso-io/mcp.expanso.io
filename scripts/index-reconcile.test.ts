@@ -9,7 +9,6 @@ import {
   retryTransient,
   summarizeErrorBody,
   VECTOR_LIST_PAGE_SIZE,
-  waitForAppliedMutations,
 } from './index-reconcile';
 
 const ok = (uri: string) => classifyResponse(uri, 200);
@@ -274,54 +273,5 @@ describe('cloudflareErrorCodes', () => {
     expect(cloudflareErrorCodes('{"errors":[{"code":40052},{"code":"7003"}]}')).toEqual([40052, 7003]);
     expect(cloudflareErrorCodes('<html>504</html>')).toEqual([]);
     expect(cloudflareErrorCodes('{"errors":null}')).toEqual([]);
-  });
-});
-
-function info(processedUpToDatetime: string | null): Response {
-  return Response.json({ success: true, result: { vectorCount: 1139, processedUpToDatetime } });
-}
-
-describe('waitForAppliedMutations', () => {
-  const since = Date.parse('2026-09-30T19:25:40Z');
-
-  it('returns once the index has processed past the last upsert', async () => {
-    const answers = [info(null), info('2026-09-30T19:25:39.900Z'), info('2026-09-30T19:25:41.250Z')];
-    let polls = 0;
-
-    await waitForAppliedMutations({
-      readInfo: async () => answers[polls++],
-      since,
-      sleep: async () => undefined,
-    });
-
-    expect(polls).toBe(3);
-  });
-
-  it('times out with what the index last reported', async () => {
-    let clock = 0;
-
-    const waiting = waitForAppliedMutations({
-      readInfo: async () => info('2026-09-30T19:25:10Z'),
-      since,
-      timeoutMs: 10_000,
-      pollMs: 5_000,
-      now: () => clock,
-      sleep: async (ms) => {
-        clock += ms;
-      },
-    });
-
-    await expect(waiting).rejects.toThrow(
-      "had not applied this run's upserts after 10s (processed up to 2026-09-30T19:25:10.000Z)"
-    );
-  });
-
-  it('fails when the info call itself fails', async () => {
-    const waiting = waitForAppliedMutations({
-      readInfo: async () => Response.json({ errors: [{ code: 10000 }] }, { status: 403 }),
-      since,
-    });
-
-    await expect(waiting).rejects.toThrow('Vectorize info returned HTTP 403');
   });
 });

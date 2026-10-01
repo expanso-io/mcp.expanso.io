@@ -20,7 +20,6 @@ import {
   planStaleDeletes,
   retryTransient,
   summarizeErrorBody,
-  waitForAppliedMutations,
   type FetchOutcome,
 } from './index-reconcile';
 
@@ -157,8 +156,6 @@ async function main() {
 
   // Process batches with limited concurrency (2 at a time to avoid rate limits)
   const concurrency = 2;
-  // Server time of the latest upsert; cleanup waits until Vectorize applies it.
-  let lastUpsertAt = 0;
 
   for (let i = 0; i < batches.length; i += concurrency) {
     const batchGroup = batches.slice(i, i + concurrency);
@@ -177,9 +174,7 @@ async function main() {
           metadata: chunk.metadata,
         }));
 
-        const upsertedAt = await upsertVectors(vectors, accountId, apiToken);
-
-        lastUpsertAt = Math.max(lastUpsertAt, upsertedAt);
+        await upsertVectors(vectors, accountId, apiToken);
       })
     );
 
@@ -191,9 +186,14 @@ async function main() {
     await deleteStaleVectors(
       new Set(chunks.map((c) => c.id)),
       outcomes,
-      lastUpsertAt,
-      accountId,
-      apiToken
+      () => listVectorIds(accountId, apiToken),
+      async (ids) => {
+        await vectorizeRequest(accountId, apiToken, 'delete_by_ids', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        });
+      }
     );
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -207,19 +207,16 @@ async function main() {
   console.log(`\nDone in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 }
 
-async function deleteStaleVectors(
+export async function deleteStaleVectors(
   currentIds: ReadonlySet<string>,
   outcomes: readonly FetchOutcome[],
-  lastUpsertAt: number,
-  accountId: string,
-  apiToken: string
+  listExistingIds: () => Promise<string[]>,
+  deleteIds: (ids: string[]) => Promise<void>
 ): Promise<void> {
-  await waitForAppliedMutations({
-    readInfo: () => vectorizeFetch(accountId, apiToken, 'info', { method: 'GET' }),
-    since: lastUpsertAt,
-  });
-
-  const existingIds = await listVectorIds(accountId, apiToken);
+  // Vectorize may not list this run's newest upserts yet. Cleanup is still
+  // safe because it only deletes listed IDs absent from the complete current
+  // set, so a current ID can never be selected for deletion.
+  const existingIds = await listExistingIds();
   const plan = planStaleDeletes(existingIds, currentIds, outcomes);
 
   if (plan.action === 'skip') {
@@ -231,11 +228,7 @@ async function deleteStaleVectors(
   console.log(`Deleting ${plan.ids.length} stale vector(s) of ${existingIds.length}`);
 
   for (const ids of chunked(plan.ids, 100)) {
-    await vectorizeRequest(accountId, apiToken, 'delete_by_ids', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
-    });
+    await deleteIds(ids);
     console.log(`  deleted: ${ids.join(', ')}`);
   }
 }
@@ -416,7 +409,7 @@ async function upsertVectors(
   vectors: Array<{ id: string; values: number[]; metadata: Record<string, string> }>,
   accountId: string,
   apiToken: string
-): Promise<number> {
+): Promise<void> {
   const response = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/expanso-docs/upsert`,
     {
@@ -433,11 +426,6 @@ async function upsertVectors(
     const error = await response.text();
     throw new Error(`Vectorize upsert error: ${response.status} - ${error}`);
   }
-
-  // The server clock, so the wait in deleteStaleVectors is immune to runner clock skew.
-  const serverTime = Date.parse(response.headers.get('date') ?? '');
-
-  return Number.isNaN(serverTime) ? Date.now() : serverTime;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

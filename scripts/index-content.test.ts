@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertUniqueChunkIds,
   createDocumentChunks,
+  deleteStaleVectors,
   generateId,
 } from './index-content';
 import { classifyResponse, planStaleDeletes } from './index-reconcile';
@@ -64,5 +65,23 @@ describe('document chunk IDs', () => {
       action: 'delete',
       ids: oldIds,
     });
+  });
+});
+
+describe('stale vector cleanup', () => {
+  it('deletes stale IDs while a current upsert is still absent from the index', async () => {
+    const currentIds = new Set(['current-visible', 'current-still-processing']);
+    const deletedBatches: string[][] = [];
+
+    await deleteStaleVectors(
+      currentIds,
+      [classifyResponse('https://docs.expanso.io/llms.txt', 200)],
+      async () => ['current-visible', 'old-format-id'],
+      async (ids) => {
+        deletedBatches.push(ids);
+      }
+    );
+
+    expect(deletedBatches).toEqual([['old-format-id']]);
   });
 });
