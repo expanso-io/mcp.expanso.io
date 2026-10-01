@@ -77,6 +77,11 @@ npm run index
 Each run upserts the current chunks, then deletes every vector it did not
 produce, so sections removed from the docs stop appearing in search. It skips
 the delete step if any source failed to fetch for a reason other than 404/410.
+If Vectorize keeps rejecting the list cursor while it applies the upserts, the
+run deletes only the stale vectors it could list, warns that cleanup is
+partial, and still succeeds. `npx tsx scripts/index-content.ts --cleanup-only`
+retries the cleanup from the IDs saved in `.reindex-ids.json`, without
+upserting again.
 
 ### Automatic Re-indexing
 
@@ -84,7 +89,9 @@ the delete step if any source failed to fetch for a reason other than 404/410.
 `docs-deployed` repository dispatch), and hourly when the live
 `https://docs.expanso.io/version.json` commit has not been indexed yet that day.
 It needs the repository secret `CLOUDFLARE_API_TOKEN_TOKENIZE` (Workers AI Read,
-Vectorize Edit). Without it the workflow warns and skips.
+Vectorize Edit). Without it the workflow warns and skips. A run whose stale
+cleanup was partial does not record the commit as indexed, so the next hourly
+run retries with `--cleanup-only`.
 
 ### Deploy
 

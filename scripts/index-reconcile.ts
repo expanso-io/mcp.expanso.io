@@ -84,29 +84,59 @@ export type VectorPageRequest = (query: URLSearchParams) => Promise<Response>;
  */
 const REJECTED_CURSOR_CODE = 40052;
 
-/** Lists every vector ID, restarting from a fresh snapshot when a cursor is rejected. */
+export type VectorIdListing =
+  | { complete: true; ids: string[] }
+  | { complete: false; ids: string[]; detail: string };
+
+export interface ListOptions {
+  restarts?: number;
+  backoffMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Lists every vector ID, restarting from a fresh snapshot when a cursor is
+ * rejected. Restarts back off so a listing can finish once this run's upserts
+ * settle. When every restart is rejected the IDs seen so far come back marked
+ * incomplete: each was really in the index, so callers may act on them.
+ */
 export async function listAllVectorIds(
   requestPage: VectorPageRequest,
-  { restarts = 2 } = {}
-): Promise<string[]> {
+  {
+    restarts = 8,
+    backoffMs = 10_000,
+    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  }: ListOptions = {}
+): Promise<VectorIdListing> {
+  const seen = new Set<string>();
+
   for (let attempt = 0; ; attempt += 1) {
     const listing = await listOnce(requestPage);
 
-    if (listing.complete) return listing.ids;
+    if (listing.complete) return listing;
+
+    for (const id of listing.ids) seen.add(id);
 
     if (attempt >= restarts) {
-      throw new Error(
-        `Vectorize list rejected its own cursor ${attempt + 1} time(s), last at page ${listing.page}: ${listing.detail}`
-      );
+      return {
+        complete: false,
+        ids: [...seen],
+        detail: `Vectorize list rejected its own cursor ${attempt + 1} time(s), last at page ${listing.page}: ${listing.detail}`,
+      };
     }
 
-    console.warn(`Vectorize list rejected the page ${listing.page} cursor; listing again from the start`);
+    const delayMs = backoffMs * (attempt + 1);
+
+    console.warn(
+      `Vectorize list rejected the page ${listing.page} cursor; listing again from the start in ${delayMs / 1000}s`
+    );
+    await sleep(delayMs);
   }
 }
 
 type Listing =
   | { complete: true; ids: string[] }
-  | { complete: false; page: number; detail: string };
+  | { complete: false; ids: string[]; page: number; detail: string };
 
 async function listOnce(requestPage: VectorPageRequest): Promise<Listing> {
   const ids: string[] = [];
@@ -124,7 +154,7 @@ async function listOnce(requestPage: VectorPageRequest): Promise<Listing> {
       const body = await response.text();
 
       if (cursor && cloudflareErrorCodes(body).includes(REJECTED_CURSOR_CODE)) {
-        return { complete: false, page, detail: summarizeErrorBody(body) };
+        return { complete: false, ids, page, detail: summarizeErrorBody(body) };
       }
 
       throw new Error(`Vectorize list returned HTTP ${response.status}: ${summarizeErrorBody(body)}`);
@@ -162,67 +192,6 @@ export function cloudflareErrorCodes(body: string): number[] {
   }
 
   return codes;
-}
-
-export interface MutationWait {
-  /** Fetches GET .../indexes/{name}/info. */
-  readInfo: () => Promise<Response>;
-  /** Server time of the last upsert response (its Date header). */
-  since: number;
-  timeoutMs?: number;
-  pollMs?: number;
-  sleep?: (ms: number) => Promise<void>;
-  now?: () => number;
-}
-
-/**
- * Upserts are applied asynchronously. Listing before they land lists a
- * snapshot the next mutation replaces, which is when Cloudflare rejects the
- * cursor. Waits until the index reports processing past `since`.
- */
-export async function waitForAppliedMutations({
-  readInfo,
-  since,
-  timeoutMs = 300_000,
-  pollMs = 5_000,
-  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-  now = Date.now,
-}: MutationWait): Promise<void> {
-  const deadline = now() + timeoutMs;
-
-  for (;;) {
-    const processedUpTo = await readProcessedUpTo(await readInfo());
-
-    if (processedUpTo !== undefined && processedUpTo >= since) return;
-
-    if (now() >= deadline) {
-      const last = processedUpTo === undefined ? 'nothing' : new Date(processedUpTo).toISOString();
-
-      throw new Error(
-        `Vectorize had not applied this run's upserts after ${timeoutMs / 1000}s (processed up to ${last})`
-      );
-    }
-
-    await sleep(pollMs);
-  }
-}
-
-async function readProcessedUpTo(response: Response): Promise<number | undefined> {
-  if (!response.ok) {
-    throw new Error(
-      `Vectorize info returned HTTP ${response.status}: ${summarizeErrorBody(await response.text())}`
-    );
-  }
-
-  const body: unknown = await response.json();
-  const result = body instanceof Object && 'result' in body ? body.result : undefined;
-
-  const processed =
-    result instanceof Object && 'processedUpToDatetime' in result ? result.processedUpToDatetime : undefined;
-
-  const time = processed == null ? Number.NaN : Date.parse(String(processed));
-
-  return Number.isNaN(time) ? undefined : time;
 }
 
 /**

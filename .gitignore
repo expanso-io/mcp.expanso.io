@@ -25,3 +25,7 @@ Thumbs.db
 
 # Adversarial test data
 data/
+
+# Re-index state written by scripts/index-content.ts
+.reindex-ids.json
+.reindex-stamp
