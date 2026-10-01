@@ -77,15 +77,16 @@ jobs:
         uses: actions/checkout@v7
 
       # A run whose stale cleanup was partial saved the IDs it upserted. The
-      # retry reuses them and only cleans up: upserting again would restart
-      # the Vectorize lag the cleanup is waiting out.
+      # retry reuses the newest saved list and only cleans up: upserting again
+      # would restart the Vectorize lag the cleanup is waiting out.
       - name: Restore IDs upserted for this commit
         id: upserted
         if: steps.credentials.outputs.ready == 'true' && !inputs.force
         uses: actions/cache/restore@v6
         with:
           path: .reindex-ids.json
-          key: ${{ steps.docs.outputs.key }}-upserted
+          key: ${{ steps.docs.outputs.key }}-upserted-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ steps.docs.outputs.key }}-upserted-
 
       - name: Setup Node.js
         if: steps.credentials.outputs.ready == 'true'
@@ -103,7 +104,7 @@ jobs:
         if: steps.credentials.outputs.ready == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_TOKENIZE }}
-          CLEANUP_ONLY: ${{ steps.upserted.outputs.cache-hit }}
+          CLEANUP_ONLY: ${{ steps.upserted.outputs.cache-matched-key != '' }}
         run: |
           if [[ "${CLEANUP_ONLY}" == 'true' ]]; then
             npx tsx scripts/index-content.ts --cleanup-only
@@ -115,11 +116,11 @@ jobs:
         if: >-
           steps.credentials.outputs.ready == 'true' &&
           steps.index.outputs.cleanup == 'partial' &&
-          steps.upserted.outputs.cache-hit != 'true'
+          steps.upserted.outputs.cache-matched-key == ''
         uses: actions/cache/save@v6
         with:
           path: .reindex-ids.json
-          key: ${{ steps.docs.outputs.key }}-upserted
+          key: ${{ steps.docs.outputs.key }}-upserted-${{ github.run_id }}-${{ github.run_attempt }}
 
       # A partial cleanup leaves the commit unstamped so the next hourly run
       # retries it.
