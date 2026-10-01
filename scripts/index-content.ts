@@ -3,12 +3,17 @@
  * Index llms.txt content into Cloudflare Vectorize
  *
  * Usage: npm run index
+ *        npx tsx scripts/index-content.ts --cleanup-only
+ *
+ * A full run saves the IDs it upserted to UPSERTED_IDS_FILE. --cleanup-only
+ * reuses them to retry a partial stale cleanup without upserting again, since
+ * re-upserting restarts the Vectorize lag that made the cleanup partial.
  *
  * Requires CLOUDFLARE_API_TOKEN environment variable.
  * Account ID is read from wrangler.toml automatically.
  */
 
-import { readFileSync } from 'fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'fs';
 import { createHash } from 'node:crypto';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -79,6 +84,10 @@ interface FetchedContent {
   content: string;
 }
 
+export const UPSERTED_IDS_FILE = '.reindex-ids.json';
+
+export type CleanupStatus = 'complete' | 'partial';
+
 async function main() {
   const accountId = getAccountIdFromWrangler();
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
@@ -88,6 +97,53 @@ async function main() {
     process.exit(1);
   }
 
+  const startTime = Date.now();
+  const cleanupOnly = process.argv.includes('--cleanup-only');
+  const indexed = cleanupOnly
+    ? { currentIds: loadUpsertedIds(UPSERTED_IDS_FILE), outcomes: [] }
+    : await indexContent(accountId, apiToken);
+
+  if (!indexed) return;
+
+  if (cleanupOnly) {
+    console.log(`Cleanup only: reusing ${indexed.currentIds.size} upserted IDs from ${UPSERTED_IDS_FILE}`);
+  } else {
+    saveUpsertedIds(UPSERTED_IDS_FILE, indexed.currentIds);
+  }
+
+  let status: CleanupStatus;
+
+  try {
+    status = await deleteStaleVectors(
+      indexed.currentIds,
+      indexed.outcomes,
+      () => listVectorIds(accountId, apiToken),
+      async (ids) => {
+        await vectorizeRequest(accountId, apiToken, 'delete_by_ids', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        });
+      }
+    );
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+
+    throw new Error(
+      `Upserted ${indexed.currentIds.size} chunks, but deleting stale vectors failed: ${reason}. ` +
+        'search_docs serves the new content plus any stale vectors until a run succeeds.'
+    );
+  }
+
+  recordCleanupStatus(status, process.env.GITHUB_OUTPUT);
+  console.log(`\nDone in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+}
+
+/** Fetches, embeds, and upserts every chunk; undefined when there was nothing to index. */
+async function indexContent(
+  accountId: string,
+  apiToken: string
+): Promise<{ currentIds: Set<string>; outcomes: FetchOutcome[] } | undefined> {
   const startTime = Date.now();
   console.log('Fetching content in parallel...');
 
@@ -142,7 +198,7 @@ async function main() {
   if (chunks.length === 0) {
     console.log('No chunks to index');
 
-    return;
+    return undefined;
   }
 
   console.log('Generating embeddings and upserting (parallel batches)...');
@@ -183,29 +239,27 @@ async function main() {
     console.log(`  ${processed}/${chunks.length} chunks indexed`);
   }
 
-  try {
-    await deleteStaleVectors(
-      new Set(chunks.map((c) => c.id)),
-      outcomes,
-      () => listVectorIds(accountId, apiToken),
-      async (ids) => {
-        await vectorizeRequest(accountId, apiToken, 'delete_by_ids', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids }),
-        });
-      }
-    );
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+  return { currentIds: new Set(chunks.map((c) => c.id)), outcomes };
+}
 
-    throw new Error(
-      `Upserted ${chunks.length} chunks, but deleting stale vectors failed: ${reason}. ` +
-        'search_docs serves the new content plus any stale vectors until a run succeeds.'
-    );
+export function saveUpsertedIds(file: string, ids: ReadonlySet<string>): void {
+  writeFileSync(file, JSON.stringify([...ids].sort()));
+}
+
+/** Reads the IDs a full run upserted; anything but a non-empty string list fails the run. */
+export function loadUpsertedIds(file: string): Set<string> {
+  const ids: unknown = JSON.parse(readFileSync(file, 'utf8'));
+
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === 'string')) {
+    throw new Error(`${file} does not hold the upserted chunk IDs`);
   }
 
-  console.log(`\nDone in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+  return new Set<string>(ids);
+}
+
+/** Exposes the cleanup status as a step output so the workflow only stamps a complete run. */
+export function recordCleanupStatus(status: CleanupStatus, githubOutput: string | undefined): void {
+  if (githubOutput) appendFileSync(githubOutput, `cleanup=${status}\n`);
 }
 
 export async function deleteStaleVectors(
@@ -213,7 +267,7 @@ export async function deleteStaleVectors(
   outcomes: readonly FetchOutcome[],
   listExistingIds: () => Promise<VectorIdListing>,
   deleteIds: (ids: string[]) => Promise<void>
-): Promise<void> {
+): Promise<CleanupStatus> {
   // Vectorize may not list this run's newest upserts yet. Cleanup is still
   // safe because it only deletes listed IDs absent from the complete current
   // set, so a current ID can never be selected for deletion.
@@ -224,7 +278,7 @@ export async function deleteStaleVectors(
   if (plan.action === 'skip') {
     console.warn(`Not deleting stale vectors: ${plan.reason}`);
 
-    return;
+    return 'complete';
   }
 
   console.log(`Deleting ${plan.ids.length} stale vector(s) of ${existingIds.length}`);
@@ -234,12 +288,19 @@ export async function deleteStaleVectors(
     console.log(`  deleted: ${ids.join(', ')}`);
   }
 
-  if (!listing.complete) {
-    console.warn(
-      `Stale cleanup is partial: only ${existingIds.length} listed vector(s) were checked because ${listing.detail}. ` +
-        'Stale vectors past that page remain until a later run lists the whole index.'
-    );
-  }
+  if (listing.complete) return 'complete';
+
+  const message =
+    `Only ${existingIds.length} listed vector(s) were checked because ${listing.detail}. ` +
+    'Stale vectors past that page remain until a retry lists the whole index.';
+
+  console.warn(
+    process.env.GITHUB_ACTIONS === 'true'
+      ? `::warning title=Stale cleanup partial::${message}`
+      : `Stale cleanup is partial: ${message}`
+  );
+
+  return 'partial';
 }
 
 async function listVectorIds(accountId: string, apiToken: string): Promise<VectorIdListing> {

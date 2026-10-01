@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -5,6 +8,9 @@ import {
   createDocumentChunks,
   deleteStaleVectors,
   generateId,
+  loadUpsertedIds,
+  recordCleanupStatus,
+  saveUpsertedIds,
 } from './index-content';
 import { classifyResponse, listAllVectorIds, planStaleDeletes } from './index-reconcile';
 
@@ -73,7 +79,7 @@ describe('stale vector cleanup', () => {
     const currentIds = new Set(['current-visible', 'current-still-processing']);
     const deletedBatches: string[][] = [];
 
-    await deleteStaleVectors(
+    const status = await deleteStaleVectors(
       currentIds,
       [classifyResponse('https://docs.expanso.io/llms.txt', 200)],
       async () => ({ complete: true, ids: ['current-visible', 'old-format-id'] }),
@@ -82,6 +88,7 @@ describe('stale vector cleanup', () => {
       }
     );
 
+    expect(status).toBe('complete');
     expect(deletedBatches).toEqual([['old-format-id']]);
   });
 
@@ -97,8 +104,9 @@ describe('stale vector cleanup', () => {
     const delays: number[] = [];
     const deletedBatches: string[][] = [];
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.stubEnv('GITHUB_ACTIONS', 'true');
 
-    await deleteStaleVectors(
+    const status = await deleteStaleVectors(
       new Set(['current']),
       [classifyResponse('https://docs.expanso.io/llms.txt', 200)],
       () =>
@@ -123,10 +131,56 @@ describe('stale vector cleanup', () => {
 
     const warnings = warn.mock.calls.map(([message]) => String(message));
     warn.mockRestore();
+    vi.unstubAllEnvs();
 
+    expect(status).toBe('partial');
     expect(calls).toBe(8);
     expect(delays).toEqual([1, 2, 3]);
     expect(deletedBatches).toEqual([['old-format-id']]);
-    expect(warnings.at(-1)).toMatch(/Stale cleanup is partial: only 2 listed vector\(s\) were checked because .*4 time\(s\)/);
+    expect(warnings.at(-1)).toMatch(
+      /^::warning title=Stale cleanup partial::Only 2 listed vector\(s\) were checked because .*4 time\(s\)/
+    );
+  });
+
+  it('exposes the cleanup status as a step output only inside a workflow', () => {
+    const output = join(mkdtempSync(join(tmpdir(), 'reindex-')), 'github-output');
+    writeFileSync(output, 'earlier=1\n');
+
+    recordCleanupStatus('partial', output);
+    recordCleanupStatus('partial', undefined);
+
+    expect(readFileSync(output, 'utf8')).toBe('earlier=1\ncleanup=partial\n');
+  });
+
+  it('retries cleanup from the IDs a partial run upserted', async () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'reindex-')), 'ids.json');
+    const deletedBatches: string[][] = [];
+
+    saveUpsertedIds(file, new Set(['current-b', 'current-a']));
+
+    const status = await deleteStaleVectors(
+      loadUpsertedIds(file),
+      [],
+      async () => ({ complete: true, ids: ['current-a', 'old-format-id', 'current-b'] }),
+      async (ids) => {
+        deletedBatches.push(ids);
+      }
+    );
+
+    expect(status).toBe('complete');
+    expect(deletedBatches).toEqual([['old-format-id']]);
+  });
+
+  it('refuses a cleanup-only retry without a usable upserted ID list', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'reindex-'));
+    const empty = join(dir, 'empty.json');
+    const wrong = join(dir, 'wrong.json');
+
+    writeFileSync(empty, '[]');
+    writeFileSync(wrong, '{"ids":["a"]}');
+
+    expect(() => loadUpsertedIds(empty)).toThrow('does not hold the upserted chunk IDs');
+    expect(() => loadUpsertedIds(wrong)).toThrow('does not hold the upserted chunk IDs');
+    expect(() => loadUpsertedIds(join(dir, 'missing.json'))).toThrow();
   });
 });
