@@ -248,7 +248,8 @@ url = "https://mcp.expanso.io/mcp"
 ### ChatGPT
 
 Turn on Developer mode under Settings > Security and login, then create a
-developer-mode app from the endpoint URL.
+developer-mode app from the endpoint URL. See [OpenAI's developer mode
+guide](https://developers.openai.com/api/docs/guides/developer-mode).
 
 ### Custom Integration
 

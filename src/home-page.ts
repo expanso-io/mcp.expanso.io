@@ -68,7 +68,7 @@ export function getClientGuides(endpoint: string): ClientGuide[] {
       id: 'chatgpt',
       name: 'ChatGPT',
       steps:
-        'Turn on <strong>Developer mode</strong> under <strong>Settings &gt; Security and login</strong>, then create a developer-mode app from this URL. Developer mode is available on Pro, Plus, Business, Enterprise and Education plans on the web.',
+        'Turn on <strong>Developer mode</strong> under <strong>Settings &gt; Security and login</strong>, then create a developer-mode app from this URL. See <a href="https://developers.openai.com/api/docs/guides/developer-mode">OpenAI&#39;s developer mode guide</a>.',
       snippet: endpoint,
       snippetLanguage: 'url',
     },
@@ -107,7 +107,7 @@ const STYLES = `
     --max: 56rem;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
+    :root {
       --bg: #15171a;
       --surface: #1d2024;
       --ink: #ece9e1;
@@ -117,16 +117,6 @@ const STYLES = `
       --accent-ink: #15171a;
       --code-bg: #23272c;
     }
-  }
-  :root[data-theme="dark"] {
-    --bg: #15171a;
-    --surface: #1d2024;
-    --ink: #ece9e1;
-    --muted: #a19c90;
-    --border: #30343a;
-    --accent: #4fd1b5;
-    --accent-ink: #15171a;
-    --code-bg: #23272c;
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
@@ -275,7 +265,10 @@ const SCRIPT = `
       status.textContent = items.length + ' result' + (items.length === 1 ? '' : 's') +
         ' for "' + data.query + '"';
       results.innerHTML = items.map(function (r) {
-        return '<li><a href="' + esc(r.uri) + '">' + esc(r.title) + '</a>' +
+        var href = /^https?:\\/\\//i.test(r.uri)
+          ? r.uri
+          : '/api/resources/' + encodeURIComponent(r.uri);
+        return '<li><a href="' + esc(href) + '">' + esc(r.title) + '</a>' +
           '<span class="domain">' + esc(r.domain) + '</span>' +
           '<p>' + esc(r.snippet) + '</p></li>';
       }).join('');
@@ -357,7 +350,7 @@ export function getHomeHtml(origin: string, tools: readonly ToolSummary[]): stri
 
     <section id="search">
       <h2>Search the docs</h2>
-      <p class="intro">The same semantic search the <code>search_docs</code> tool runs, with no generation on top. Results link to the source page.</p>
+      <p class="intro">The same semantic search the <code>search_docs</code> tool runs, with no generation on top. Web pages link directly; indexed examples and llms.txt chunks open as resources from this server.</p>
       <form class="search" id="search-form" action="/api/search" method="get" role="search">
         <input id="q" name="q" type="search" aria-label="Search query" placeholder="kafka to s3 with batching" autocomplete="off" required>
         <input type="hidden" name="limit" value="8">

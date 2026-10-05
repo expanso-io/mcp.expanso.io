@@ -87,4 +87,11 @@ describe('getClientGuides', () => {
     expect(byId['claude'].snippet).toBe(endpoint);
     expect(byId['chatgpt'].snippet).toBe(endpoint);
   });
+
+  it('links ChatGPT users to the developer mode guide instead of plan claims', () => {
+    expect(byId['chatgpt'].steps).toContain(
+      'https://developers.openai.com/api/docs/guides/developer-mode',
+    );
+    expect(byId['chatgpt'].steps).not.toMatch(/Pro, Plus|Enterprise|Education/);
+  });
 });
