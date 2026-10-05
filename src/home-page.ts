@@ -265,10 +265,10 @@ const SCRIPT = `
       status.textContent = items.length + ' result' + (items.length === 1 ? '' : 's') +
         ' for "' + data.query + '"';
       results.innerHTML = items.map(function (r) {
-        var href = /^https?:\\/\\//i.test(r.uri)
-          ? r.uri
-          : '/api/resources/' + encodeURIComponent(r.uri);
-        return '<li><a href="' + esc(href) + '">' + esc(r.title) + '</a>' +
+        var title = /^https?:\\/\\//i.test(r.uri)
+          ? '<a href="' + esc(r.uri) + '">' + esc(r.title) + '</a>'
+          : '<strong>' + esc(r.title) + '</strong>';
+        return '<li>' + title +
           '<span class="domain">' + esc(r.domain) + '</span>' +
           '<p>' + esc(r.snippet) + '</p></li>';
       }).join('');
@@ -350,7 +350,7 @@ export function getHomeHtml(origin: string, tools: readonly ToolSummary[]): stri
 
     <section id="search">
       <h2>Search the docs</h2>
-      <p class="intro">The same semantic search the <code>search_docs</code> tool runs, with no generation on top. Web pages link directly; indexed examples and llms.txt chunks open as resources from this server.</p>
+      <p class="intro">The same semantic search the <code>search_docs</code> tool runs, with no generation on top. Docs results link to their source; pipeline examples show their summary.</p>
       <form class="search" id="search-form" action="/api/search" method="get" role="search">
         <input id="q" name="q" type="search" aria-label="Search query" placeholder="kafka to s3 with batching" autocomplete="off" required>
         <input type="hidden" name="limit" value="8">

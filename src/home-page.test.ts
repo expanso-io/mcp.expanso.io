@@ -95,3 +95,61 @@ describe('getClientGuides', () => {
     expect(byId['chatgpt'].steps).not.toMatch(/Pro, Plus|Enterprise|Education/);
   });
 });
+
+describe('search results rendered by the page script', () => {
+  type FakeElement = {
+    value: string;
+    textContent: string;
+    innerHTML: string;
+    addEventListener: () => void;
+  };
+
+  async function renderResults(results: unknown[]): Promise<FakeElement> {
+    const html = getHomeHtml(ORIGIN, TOOLS);
+    const script = html.slice(html.indexOf('<script>') + '<script>'.length, html.indexOf('</script>'));
+    const element = (): FakeElement => ({
+      value: '',
+      textContent: '',
+      innerHTML: '',
+      addEventListener: () => undefined,
+    });
+    const byId: Record<string, FakeElement> = {
+      'search-form': element(),
+      q: element(),
+      status: element(),
+      results: element(),
+    };
+    const document = {
+      querySelectorAll: () => [],
+      getElementById: (id: string) => byId[id] ?? null,
+    };
+    const window = { location: { href: `${ORIGIN}/?q=kafka`, search: '?q=kafka' } };
+    const fetch = async () => ({ ok: true, json: async () => ({ query: 'kafka', results }) });
+    new Function('document', 'window', 'fetch', 'URLSearchParams', script)(
+      document,
+      window,
+      fetch,
+      URLSearchParams,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return byId['results'];
+  }
+
+  it('links docs results straight to their https source', async () => {
+    const results = await renderResults([
+      { uri: 'https://docs.expanso.io/llms/cli.txt', title: 'CLI', domain: 'docs.expanso.io', snippet: 'Run it' },
+    ]);
+    expect(results.innerHTML).toContain('<a href="https://docs.expanso.io/llms/cli.txt">CLI</a>');
+  });
+
+  it('shows example results as plain text with no link', async () => {
+    const results = await renderResults([
+      { uri: 'examples://expanso.io/kafka-to-s3-json', title: 'Kafka to S3', domain: 'examples.expanso.io', snippet: 'Batch & ship' },
+    ]);
+    expect(results.innerHTML).not.toContain('<a ');
+    expect(results.innerHTML).not.toContain('/api/resources/');
+    expect(results.innerHTML).toContain('<strong>Kafka to S3</strong>');
+    expect(results.innerHTML).toContain('<span class="domain">examples.expanso.io</span>');
+    expect(results.innerHTML).toContain('<p>Batch &amp; ship</p>');
+  });
+});
