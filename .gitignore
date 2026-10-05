@@ -23,7 +23,7 @@ Thumbs.db
 # Logs
 *.log
 
-# Adversarial test data
+# Local scratch data (review reports, old test output)
 data/
 
 # Re-index state written by scripts/index-content.ts
