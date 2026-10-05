@@ -5,7 +5,8 @@ A Model Context Protocol (MCP) server for semantic search and retrieval over Exp
 ## Features
 
 - **Semantic Search**: Query documentation using natural language
-- **MCP Protocol**: Compatible with Claude, ChatGPT, and other AI assistants
+- **MCP Protocol**: Compatible with Claude, Cursor, Codex, ChatGPT and other MCP clients
+- **Retrieval only**: No server-side text generation; the client's own model does the writing
 - **Multi-Domain**: Searches across expanso.io, docs.expanso.io, and examples.expanso.io
 - **HTTP API**: Direct API access for custom integrations
 - **Edge Deployment**: Low latency via Cloudflare's global network
@@ -156,6 +157,9 @@ The server implements MCP protocol version 2024-11-05.
 
 #### Tools
 
+The root page at `https://mcp.expanso.io/` renders this list from the
+`TOOLS` registry in `src/mcp.ts`, so it always matches `tools/list`.
+
 1. **search_docs**: Semantic search over documentation
    - `query` (string, required): Search query
    - `limit` (number, optional): Max results
@@ -165,6 +169,20 @@ The server implements MCP protocol version 2024-11-05.
    - `uri` (string, required): Resource URI
 
 3. **list_resources**: List all available resources
+
+4. **validate_pipeline**: Validate pipeline YAML and return errors with fixes
+
+5. **get_component_schema**: Field definitions for a pipeline component
+
+6. **get_bloblang_reference**: Bloblang function and method reference
+
+7. **suggest_pipeline_pattern**: Example pipelines for a described use case
+
+8. **explain_error**: Plain-language explanation of a validation or runtime error
+
+9. **list_components**: Discover inputs, processors and outputs
+
+10. **generate_test_data**: Sample input records for testing a pipeline
 
 #### Example MCP Request
 
@@ -185,9 +203,24 @@ The server implements MCP protocol version 2024-11-05.
 
 ## Configuration
 
-### Claude Desktop
+The endpoint is `https://mcp.expanso.io/mcp`: streamable HTTP, JSON-RPC,
+no authentication. The root page shows the same instructions with copy
+buttons.
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+### Claude Code
+
+```bash
+claude mcp add --transport http expanso-docs https://mcp.expanso.io/mcp
+```
+
+### Claude (desktop and web)
+
+Customize > Connectors, click the + next to Connectors, choose Custom > Web,
+name it and paste the endpoint URL.
+
+### Cursor
+
+Add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
 
 ```json
 {
@@ -198,6 +231,25 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   }
 }
 ```
+
+### Codex
+
+```bash
+codex mcp add expanso-docs --url https://mcp.expanso.io/mcp
+```
+
+Or in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.expanso-docs]
+url = "https://mcp.expanso.io/mcp"
+```
+
+### ChatGPT
+
+Turn on Developer mode under Settings > Security and login, then create a
+developer-mode app from the endpoint URL. See [OpenAI's developer mode
+guide](https://developers.openai.com/api/docs/guides/developer-mode).
 
 ### Custom Integration
 

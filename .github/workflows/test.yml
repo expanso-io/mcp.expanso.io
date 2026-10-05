@@ -32,9 +32,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # CI=true skips the tests that call live services
-      # (src/integration.test.ts); set INTEGRATION_TESTS to run them.
       - name: Run tests
-        env:
-          CI: 'true'
         run: npx vitest run

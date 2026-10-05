@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MCP (Model Context Protocol) server for semantic search over Expanso documentation. Deployed on Cloudflare Workers with Vectorize for vector search. Serves both HTTP API and MCP protocol endpoints at `mcp.expanso.io`.
+MCP (Model Context Protocol) server for semantic search over Expanso documentation. Deployed on Cloudflare Workers with Vectorize for vector search. Serves both HTTP API and MCP protocol endpoints at `mcp.expanso.io`. The server never calls a text-generation model: the only Workers AI model it uses is the embedding model for search.
 
 ## Commands
 
@@ -23,18 +23,16 @@ just tail          # View production logs
 ```
 src/
 ├── index.ts              # Main worker entry, route handling, YAML validation
-├── mcp.ts                # MCP protocol (JSON-RPC tools: search_docs, get_resource, list_resources)
+├── mcp.ts                # MCP protocol (JSON-RPC tools, TOOLS registry)
 ├── handlers.ts           # Search/resource handlers (Vectorize queries, keyword fallback)
+├── home-page.ts          # Root page: client setup, tool list from TOOLS, docs search box
 ├── pipeline-validator.ts # YAML validation for Expanso/Benthos pipelines (component registry)
 ├── examples-registry.ts  # Curated pipeline examples with metadata
-├── docs-links.ts         # Component reference extraction from YAML
-├── analytics.ts          # PostHog event tracking
-└── chat-ui.ts            # HTML5 chat interface with YAML editor
+└── analytics.ts          # PostHog event tracking
 
 scripts/
 ├── deploy.sh             # Orchestrates worker deploy + content indexing
-├── index-content.ts      # Fetches llms.txt, generates embeddings, uploads to Vectorize
-└── adversarial-test.ts   # Overnight adversarial testing for training data
+└── index-content.ts      # Fetches llms.txt, generates embeddings, uploads to Vectorize
 ```
 
 ### Cloudflare Bindings (wrangler.toml)
@@ -48,13 +46,14 @@ scripts/
 - **Search fallback**: If Vectorize unavailable, falls back to keyword search over cached content
 - **External validation**: YAML validated against `https://validate.expanso.io/validate`
 - **CORS**: All origins allowed (`Access-Control-Allow-Origin: *`)
-- **Analytics**: PostHog tracking for page views, searches, chat, YAML feedback
+- **Analytics**: PostHog tracking for page views, searches, tool calls, resource reads
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/` or `/chat` | GET | Interactive chat UI |
+| `/` | GET | Root page: how to connect a client, tool list, docs search box |
+| `/chat` | GET | 301 redirect to `/` |
 | `/api/search?q=<query>` | GET | Semantic search (optional: `limit`, `domain`) |
 | `/api/resources` | GET | List all documentation resources |
 | `/api/resources/<uri>` | GET | Get resource content (URL-encoded URI) |
@@ -88,29 +87,6 @@ The `pipeline-validator.ts` contains a component registry for validating Expanso
 - Common hallucination patterns (e.g., wrong cache types, invalid broker configs)
 
 When adding new components, update the `COMPONENT_REGISTRY` object.
-
-## Adversarial Testing
-
-The `scripts/adversarial-test.ts` script generates prompts, sends them to the chat API, validates responses, and records results for training data collection.
-
-```bash
-just adversarial                    # Run indefinitely at 1 req/sec
-just adversarial --count=100        # Run 100 tests
-just adversarial-resume             # Resume from last position
-just adversarial --rate=5           # 5 requests per second
-```
-
-Output is saved to `data/adversarial-results.jsonl` (gitignored). Each line contains:
-- Prompt and category
-- Generated YAML blocks
-- Validation results (valid/invalid, hallucinations, corrections)
-- Timing data
-
-Prompt categories:
-- `adversarial` - Designed to trigger common LLM mistakes
-- `bloblang` - Bloblang syntax challenges
-- `use_case` - Real-world pipeline scenarios
-- `component` - Input/output/processor combinations
 
 ## Task Tracking
 

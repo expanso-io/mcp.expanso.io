@@ -63,26 +63,6 @@ lint:
 clean:
     rm -rf dist/ .wrangler/
 
-# Run adversarial testing (overnight)
-adversarial *ARGS:
-    npx tsx scripts/adversarial-test.ts {{ARGS}}
-
-# Run adversarial testing with resume
-adversarial-resume:
-    npx tsx scripts/adversarial-test.ts --resume
-
 # Show Cloudflare Workers status
 status:
     wrangler whoami
-
-# Generate test corpus for validate.expanso.io (1000 samples)
-corpus *ARGS:
-    npx tsx scripts/generate-test-corpus.ts {{ARGS}}
-
-# Resume corpus generation
-corpus-resume:
-    npx tsx scripts/generate-test-corpus.ts --resume
-
-# Analyze adversarial/corpus results
-analyze FILE="data/adversarial-results.jsonl":
-    ./scripts/analyze-results.sh {{FILE}}

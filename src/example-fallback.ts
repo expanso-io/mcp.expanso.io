@@ -1,12 +1,9 @@
 /**
  * Example Fallback
  *
- * Simple keyword-based example search for fallback when schema-driven
- * generation fails. This replaces the complex pattern-suggester.ts which
- * had hardcoded concept mappings.
- *
- * The primary generation method is now schema-driven (schema-generator.ts).
- * This module is only used as a fallback.
+ * Keyword-based example search behind the suggest_pipeline_pattern MCP
+ * tool. It replaces the older pattern-suggester.ts, which had hardcoded
+ * concept mappings, and never calls a language model.
  */
 
 import { PIPELINE_EXAMPLES } from './examples-data';
@@ -42,7 +39,7 @@ function scoreExample(
   keywords: string[],
   inputType?: string,
   outputType?: string
-): { score: number; reasons: string[] } {
+) {
   let score = 0;
   const reasons: string[] = [];
 
@@ -64,6 +61,7 @@ function scoreExample(
   // Bonus for input/output type matches
   if (inputType) {
     const inputLower = inputType.toLowerCase();
+
     if (example.components.inputs.some((i: string) => i.toLowerCase().includes(inputLower))) {
       score += 2;
       reasons.push(`input type: ${inputType}`);
@@ -72,6 +70,7 @@ function scoreExample(
 
   if (outputType) {
     const outputLower = outputType.toLowerCase();
+
     if (example.components.outputs.some((o: string) => o.toLowerCase().includes(outputLower))) {
       score += 2;
       reasons.push(`output type: ${outputType}`);
@@ -145,8 +144,7 @@ function generateHints(example: PipelineExample): string[] {
 /**
  * Suggest pipeline patterns based on use case description.
  *
- * This is a simple keyword-based search. For more sophisticated
- * generation, use schema-generator.ts which uses the actual schema.
+ * This is a simple keyword-based search over the curated examples.
  */
 export function suggestPipelinePatterns(options: SuggestOptions): PatternSuggestion[] {
   const { use_case, input_type, output_type, limit = 3 } = options;
@@ -176,21 +174,28 @@ export function suggestPipelinePatterns(options: SuggestOptions): PatternSuggest
 }
 
 /**
- * Get suggestion with helpful message when no matches found
+ * Suggestions plus a message when nothing matched
  */
-export function suggestWithFallback(options: SuggestOptions): {
+export interface SuggestionResult {
   suggestions: PatternSuggestion[];
   message?: string;
-} {
+}
+
+/**
+ * Get suggestion with helpful message when no matches found
+ */
+export function suggestWithFallback(options: SuggestOptions): SuggestionResult {
   const suggestions = suggestPipelinePatterns(options);
 
   if (suggestions.length === 0) {
     const keywords = extractKeywords(options.use_case);
     let message = 'No matching examples found.';
+
     if (keywords.length > 0) {
       message += ` Keywords searched: ${keywords.slice(0, 5).join(', ')}.`;
     }
-    message += ' Try using input_type/output_type filters, or use the schema-driven generator for custom pipelines.';
+
+    message += ' Try using input_type/output_type filters, or search the docs with search_docs.';
 
     return { suggestions: [], message };
   }

@@ -6,7 +6,7 @@ When creating beads for related projects, ensure you create them in the **correc
 
 | Topic | Create bead in |
 |-------|----------------|
-| MCP server features (chat UI, search, handlers) | `/Users/daaronch/code/mcp.expanso.io` |
+| MCP server features (root page, search, handlers) | `/Users/daaronch/code/mcp.expanso.io` |
 | Validation service features (AST parsing, error detection) | `/Users/daaronch/code/validate.expanso.io` |
 
 ## How to create beads in another project

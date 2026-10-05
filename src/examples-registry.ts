@@ -42,6 +42,7 @@ export function searchExamples(query: string, limit: number = 3): PipelineExampl
       if (queryLower.includes(keyword)) {
         score += 3;
       }
+
       for (const term of queryTerms) {
         if (keyword.includes(term) || term.includes(keyword)) {
           score += 2;
@@ -55,6 +56,7 @@ export function searchExamples(query: string, limit: number = 3): PipelineExampl
       ...example.components.processors,
       ...example.components.outputs,
     ];
+
     for (const comp of allComponents) {
       if (queryLower.includes(comp)) {
         score += 5; // Strong signal when component is mentioned
@@ -63,6 +65,7 @@ export function searchExamples(query: string, limit: number = 3): PipelineExampl
 
     // Name/description match
     const text = `${example.name} ${example.description}`.toLowerCase();
+
     for (const term of queryTerms) {
       if (text.includes(term)) {
         score += 1;
@@ -97,64 +100,15 @@ export function getExamplesByComponent(componentName: string): PipelineExample[]
       ...example.components.processors,
       ...example.components.outputs,
     ];
+
     return allComponents.includes(componentName);
   });
 }
 
 /**
- * Format examples for LLM context
+ * Metadata values Vectorize stores alongside a vector
  */
-export function formatExamplesForContext(examples: PipelineExample[]): string {
-  if (examples.length === 0) {
-    return '';
-  }
-
-  const sections = examples.map(ex => `
-### Example: ${ex.name}
-${ex.description}
-
-**Components:** ${[...ex.components.inputs, ...ex.components.processors, ...ex.components.outputs].join(', ')}
-
-\`\`\`yaml
-${ex.yaml}
-\`\`\`
-${ex.bloblangPatterns && ex.bloblangPatterns.length > 0 ? `\n**Bloblang patterns demonstrated:** ${ex.bloblangPatterns.join(', ')}` : ''}
-`);
-
-  return `## Validated Pipeline Examples
-
-The following examples show correct syntax. Use these as REFERENCE when generating pipelines.
-
-${sections.join('\n---\n')}`;
-}
-
-/**
- * Welcome example format for API response
- */
-export interface WelcomeExample {
-  id: string;
-  name: string;
-  prompt: string;
-}
-
-/**
- * Get random examples for welcome screen
- */
-export function getRandomExamples(count: number = 6): PipelineExample[] {
-  const shuffled = [...PIPELINE_EXAMPLES].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, Math.min(count, PIPELINE_EXAMPLES.length));
-}
-
-/**
- * Format examples for welcome screen API
- */
-export function formatWelcomeExamples(examples: PipelineExample[]): WelcomeExample[] {
-  return examples.map(ex => ({
-    id: ex.id,
-    name: ex.name,
-    prompt: `Show me a ${ex.name.toLowerCase()} pipeline`,
-  }));
-}
+export type VectorMetadata = Record<string, string | number | boolean | string[]>;
 
 /**
  * Environment bindings required for semantic search
@@ -167,7 +121,7 @@ export interface SemanticSearchEnv {
     query(
       vector: number[],
       options: { topK: number; returnMetadata?: 'all' | 'indexed' | 'none'; filter?: Record<string, string> }
-    ): Promise<{ matches: Array<{ id: string; score: number; metadata?: Record<string, unknown> }> }>;
+    ): Promise<{ matches: Array<{ id: string; score: number; metadata?: VectorMetadata }> }>;
   };
 }
 
@@ -217,8 +171,10 @@ export async function semanticSearchExamples(
 
     // Convert matches to PipelineExamples
     const examples: PipelineExample[] = [];
+
     for (const match of vectorResults.matches) {
       const example = getExampleById(match.id);
+
       if (example) {
         examples.push(example);
       }
@@ -233,6 +189,7 @@ export async function semanticSearchExamples(
   } catch (error) {
     // On any error, fall back to keyword search
     console.error('Semantic search failed, falling back to keyword search:', error);
+
     return searchExamples(query, limit);
   }
 }
