@@ -135,12 +135,10 @@ expanso-services/
 │   │   ├── wrangler.toml
 │   │   ├── src/
 │   │   │   ├── index.ts
-│   │   │   ├── chat-ui.ts
 │   │   │   ├── mcp.ts
 │   │   │   ├── handlers.ts
 │   │   │   ├── analytics.ts
 │   │   │   ├── examples-registry.ts
-│   │   │   ├── docs-links.ts
 │   │   │   ├── error-explainer.ts
 │   │   │   ├── pattern-suggester.ts
 │   │   │   ├── bloblang-reference.ts

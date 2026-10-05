@@ -105,6 +105,29 @@ describe('Examples Registry', () => {
     });
   });
 
+  describe('searchExamples', () => {
+    it('should find kafka examples', () => {
+      const examples = searchExamples('kafka to s3', 3);
+
+      expect(examples.length).toBeGreaterThan(0);
+      expect(examples[0].yaml).toContain('kafka');
+    });
+
+    it('should find elasticsearch examples', () => {
+      const examples = searchExamples('index in elasticsearch', 3);
+
+      expect(examples.length).toBeGreaterThan(0);
+      expect(examples[0].yaml.toLowerCase()).toContain('elasticsearch');
+    });
+
+    it('should find webhook examples', () => {
+      const examples = searchExamples('receive http webhooks', 3);
+
+      expect(examples.length).toBeGreaterThan(0);
+      expect(examples[0].yaml).toContain('http_server');
+    });
+  });
+
   describe('getExampleById', () => {
     it('should find example by ID', () => {
       const example = getExampleById('kafka-to-s3-json');
@@ -155,6 +178,7 @@ describe('Examples Registry', () => {
       const withParseJson = PIPELINE_EXAMPLES.filter(
         e => e.bloblangPatterns?.includes('parse_json()')
       );
+
       expect(withParseJson.length).toBeGreaterThan(10);
     });
 
@@ -162,6 +186,7 @@ describe('Examples Registry', () => {
       const withMapEach = PIPELINE_EXAMPLES.filter(
         e => e.bloblangPatterns?.includes('map_each()')
       );
+
       expect(withMapEach.length).toBeGreaterThan(0);
     });
 
@@ -169,6 +194,7 @@ describe('Examples Registry', () => {
       const withError = PIPELINE_EXAMPLES.filter(
         e => e.bloblangPatterns?.includes('error()') || e.bloblangPatterns?.includes('errored()')
       );
+
       expect(withError.length).toBeGreaterThan(0);
     });
 
@@ -176,6 +202,7 @@ describe('Examples Registry', () => {
       const withLet = PIPELINE_EXAMPLES.filter(
         e => e.bloblangPatterns?.includes('let')
       );
+
       expect(withLet.length).toBeGreaterThan(0);
     });
   });
@@ -233,6 +260,7 @@ describe('Examples Registry', () => {
 
     it('should use Vectorize when available and return matches', async () => {
       const exampleId = 'kafka-to-s3-json';
+
       const mockEnv: SemanticSearchEnv = {
         AI: {
           run: vi.fn().mockResolvedValue({ data: [[0.1, 0.2, 0.3]] }),

@@ -6,10 +6,15 @@
 
 const POSTHOG_HOST = 'https://us.i.posthog.com';
 
+// PostHog accepts scalars and string lists as property values.
+type EventPropertyValue = string | number | boolean | null | undefined | string[];
+
+type EventProperties = Record<string, EventPropertyValue>;
+
 interface AnalyticsEvent {
   event: string;
   distinctId: string;
-  properties?: Record<string, unknown>;
+  properties?: EventProperties;
 }
 
 /**
@@ -50,7 +55,7 @@ export async function trackPageView(
   apiKey: string,
   distinctId: string,
   path: string,
-  properties?: Record<string, unknown>
+  properties?: EventProperties
 ): Promise<void> {
   await trackEvent(apiKey, {
     event: '$pageview',
@@ -58,27 +63,6 @@ export async function trackPageView(
     properties: {
       $current_url: path,
       ...properties,
-    },
-  });
-}
-
-/**
- * Track MCP chat message
- */
-export async function trackChat(
-  apiKey: string,
-  distinctId: string,
-  message: string,
-  responseLength: number,
-  sourcesCount: number
-): Promise<void> {
-  await trackEvent(apiKey, {
-    event: 'mcp_chat',
-    distinctId,
-    properties: {
-      message_length: message.length,
-      response_length: responseLength,
-      sources_count: sourcesCount,
     },
   });
 }
@@ -145,72 +129,19 @@ export async function trackResourceRead(
 }
 
 /**
- * Track YAML generated in chat responses (automatic, no user action needed)
- */
-export async function trackYamlGenerated(
-  apiKey: string,
-  distinctId: string,
-  yaml: string,
-  userMessage: string,
-  validationResult: { valid: boolean; errors: string[]; warnings: string[]; autoCorrected?: boolean; fixAttempts?: number },
-  yamlId: string
-): Promise<void> {
-  await trackEvent(apiKey, {
-    event: 'yaml_generated',
-    distinctId,
-    properties: {
-      yaml_id: yamlId,
-      yaml_preview: yaml.slice(0, 500), // Short preview for PostHog
-      yaml_length: yaml.length,
-      user_message: userMessage.slice(0, 500),
-      validator_valid: validationResult.valid,
-      validator_errors: validationResult.errors,
-      validator_error_count: validationResult.errors.length,
-      validator_warnings: validationResult.warnings,
-      was_auto_corrected: validationResult.autoCorrected ?? false,
-      fix_attempts: validationResult.fixAttempts ?? 1,
-    },
-  });
-}
-
-/**
- * Track YAML feedback from users
- */
-export async function trackYamlFeedback(
-  apiKey: string,
-  distinctId: string,
-  yaml: string,
-  isValid: boolean,
-  userMessage: string,
-  validationResult?: { errors: string[]; warnings: string[] }
-): Promise<void> {
-  await trackEvent(apiKey, {
-    event: 'yaml_feedback',
-    distinctId,
-    properties: {
-      yaml_content: yaml.slice(0, 2000), // Truncate for storage
-      yaml_length: yaml.length,
-      user_reported_valid: isValid,
-      user_message: userMessage.slice(0, 500),
-      validator_errors: validationResult?.errors || [],
-      validator_warnings: validationResult?.warnings || [],
-      validator_error_count: validationResult?.errors?.length || 0,
-    },
-  });
-}
-
-/**
  * Generate a distinct ID from request headers
  */
 export function getDistinctId(request: Request): string {
   // Use CF-Connecting-IP or fall back to a hash of user-agent
   const ip = request.headers.get('CF-Connecting-IP');
+
   if (ip) {
     // Hash the IP for privacy
     return `cf_${hashString(ip)}`;
   }
 
   const ua = request.headers.get('User-Agent') || 'unknown';
+
   return `ua_${hashString(ua)}`;
 }
 
@@ -219,10 +150,12 @@ export function getDistinctId(request: Request): string {
  */
 function hashString(str: string): string {
   let hash = 0;
+
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = (hash << 5) - hash + char;
     hash = hash & hash; // Convert to 32bit integer
   }
+
   return Math.abs(hash).toString(36);
 }
