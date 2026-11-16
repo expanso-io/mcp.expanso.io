@@ -87,12 +87,12 @@ upserting again.
 ### Automatic Re-indexing
 
 `.github/workflows/reindex.yml` re-indexes when docs.expanso.io deploys (a
-`docs-deployed` repository dispatch), and hourly when the live
+`docs-deployed` repository dispatch), and every 6 hours when the live
 `https://docs.expanso.io/version.json` commit has not been indexed yet that day.
 It needs the repository secret `CLOUDFLARE_API_TOKEN_TOKENIZE` (Workers AI Read,
 Vectorize Edit). Without it the workflow warns and skips. A run whose stale
-cleanup was partial does not record the commit as indexed, so the next hourly
-run retries with `--cleanup-only`.
+cleanup was partial does not record the commit as indexed, so the next
+scheduled run retries with `--cleanup-only`.
 
 ### Deploy
 

@@ -205,7 +205,7 @@ describe('reindex workflow', () => {
     expect(world.caches.map((c) => c.key)).toContain(`docs-index-${'c'.repeat(40)}-2026-09-30`);
   });
 
-  it('stamps a complete run and leaves a partial one for the next hourly retry', () => {
+  it('stamps a complete run and leaves a partial one for the next scheduled retry', () => {
     const world: World = { caches: [], index: new Set(['old-1']) };
     const stamp = `docs-index-${'c'.repeat(40)}-2026-09-30`;
 
