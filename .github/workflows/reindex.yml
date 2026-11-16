@@ -2,16 +2,19 @@ name: Re-index docs
 
 # Keeps the Vectorize index behind search_docs in step with the live docs.
 # docs.expanso.io dispatches docs-deployed after each verified deploy; the
-# schedule catches deploys whose dispatch was skipped. A run only indexes
-# when the live docs commit (or the day) changed since the last successful
-# index, so most scheduled runs stop after one HTTP request.
+# schedule catches deploys whose dispatch was skipped, and picks up
+# expanso.io and examples.expanso.io, which change without a docs deploy.
+# Every 6 hours keeps a same-day retry for a partial cleanup (the stamp key
+# includes the day). A run only indexes when the live docs commit (or the
+# day) changed since the last successful index, so most scheduled runs stop
+# after one HTTP request.
 
 on:
   repository_dispatch:
     types:
       - docs-deployed
   schedule:
-    - cron: '41 * * * *'
+    - cron: '41 */6 * * *'
   workflow_dispatch:
     inputs:
       force:
@@ -122,7 +125,7 @@ jobs:
           path: .reindex-ids.json
           key: ${{ steps.docs.outputs.key }}-upserted-${{ github.run_id }}-${{ github.run_attempt }}
 
-      # A partial cleanup leaves the commit unstamped so the next hourly run
+      # A partial cleanup leaves the commit unstamped so the next scheduled run
       # retries it.
       - name: Record indexed commit
         if: >-
